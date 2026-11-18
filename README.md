@@ -2,6 +2,8 @@
 
 A chat agent that handles employee cab shift-change requests for multiple companies. It reads the employee's roster, enforces company rules in code, applies the change or offers the next option, and escalates to a manager when a rule is broken. The manager pause survives a restart.
 
+**Docs:** [spec.md](spec.md) (what) · [architecture.md](architecture.md) (how it fits) · [design.md](design.md) (details)
+
 ---
 
 ## Quick start
