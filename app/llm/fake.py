@@ -43,11 +43,11 @@ def parse(msg: str, prev: dict, today: str) -> dict:
 
 
 def _trip(m: str) -> str | None:
-    if re.search(r"pick[\s-]?up|morning", m):
-        return "pickup"
-    if re.search(r"drop|leave|home|tonight|evening", m):
-        return "drop"
-    return None
+    pickup = re.search(r"pick[\s-]?up|morning", m)
+    drop = re.search(r"drop|leave|home|tonight|evening", m)
+    if pickup and drop:
+        return None            # both mentioned -> don't guess, the agent will ask
+    return "pickup" if pickup else "drop" if drop else None
 
 
 def _date(m: str, today: str) -> str | None:

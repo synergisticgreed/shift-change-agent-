@@ -18,7 +18,9 @@ SEED_FILE = Path(__file__).resolve().parents[2] / "data" / "seed.json"
 
 def make_engine(url: str) -> Engine:
     if not url.startswith("sqlite"):
-        return create_engine(url, pool_pre_ping=True)
+        # Postgres: a stuck query or lock fails fast -> caught -> plain "try again" (FR-11)
+        return create_engine(url, pool_pre_ping=True, pool_timeout=2, connect_args={
+            "connect_timeout": 2, "options": "-c statement_timeout=2000 -c lock_timeout=1500"})
     eng = create_engine(url, connect_args={"check_same_thread": False})
 
     # SQLite: wait for locks instead of failing; enforce foreign keys.

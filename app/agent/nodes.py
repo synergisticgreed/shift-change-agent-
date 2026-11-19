@@ -11,16 +11,19 @@ from app import clock
 from app.agent.intent import Intent, merge
 from app.agent.state import identity
 from app.agent.templates import render
+from app.errors import log, tool_error
 from app.llm.budget import BudgetExceeded, ask
 from app.llm.client import LLM, LLMError
 from app.llm.fake import parse as keyword_parse
 from app.tools import requests as rq
+from app.tools import roster
 
 UNDERSTAND_PROMPT = """You turn an employee's cab message into JSON.
 Keys: action (change_time|cancel|status|confirm|decline|unclear), trip_type (pickup|drop|null),
 date (YYYY-MM-DD|null), new_time (HH:MM 24h|null).
 "previous" is the last intent: use it for follow-ups like "make it 8 instead".
-"yes" = confirm, "no" = decline. Never guess a missing value: use null. Reply with JSON only."""
+"yes" = confirm, "no" = decline. Never guess a missing value: use null.
+If the message is about both pickup and drop, use trip_type null. Reply with JSON only."""
 
 REPLY_PROMPT = """Rewrite the draft as a short, friendly reply to an employee.
 Keep every time, date and number exactly. Do not add new offers or facts."""
@@ -75,11 +78,29 @@ def route_intent(s) -> str:
 # ---------- 2. simple branches (no LLM) ----------
 
 def clarify(s):
-    """FR-9: ask, don't guess."""
+    """FR-9: ask, don't guess. One question per turn: the first missing field.
+    Data Flow: intent.missing -> [asking the time? list real free cabs] -> question template.
+    The answer comes back next turn and intent.merge joins it to this request."""
     i = s["intent"]
     if i["action"] == "unclear":
         return {"result": {"outcome": "unclear"}}
-    return {"result": {"outcome": "clarify", "missing": i["missing"]}}
+    result = {"outcome": "clarify", "missing": i["missing"]}
+    if i["missing"][0] == "new_time" and i["trip_type"] and i["date"]:
+        result["options"] = _free_times(identity(s), i["date"], i["trip_type"])
+    return {"result": result}
+
+
+def _free_times(who, day, trip) -> str:
+    """'19:00, 20:00': cabs with a free seat, minus the one the employee is on.
+    A failed lookup only makes the question less helpful, so: log it and ask plainly."""
+    try:
+        cur = roster.get_trip(who, day, trip)
+        mine = cur["cab_id"] if cur else None
+        return ", ".join(o["depart_at"] for o in roster.list_options(who, day, trip)
+                         if o["booked"] < o["capacity"] and o["id"] != mine)
+    except Exception:
+        log.exception("free times lookup failed")
+        return ""
 
 
 def status(s):
@@ -87,7 +108,7 @@ def status(s):
     try:
         r = rq.latest_request(identity(s))
     except Exception:
-        return {"result": {"outcome": "tool_error"}}
+        return tool_error("status")
     if not r:
         return {"result": {"outcome": "no_requests"}}
     return {"result": {"outcome": "status", "request_id": r["id"], "status": r["status"]}}

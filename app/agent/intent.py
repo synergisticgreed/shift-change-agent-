@@ -22,16 +22,19 @@ class Intent(BaseModel):
 
 # Fields each action needs before code can act
 REQUIRED = {"change_time": ["trip_type", "date", "new_time"], "cancel": ["trip_type", "date"]}
+FIELDS = ("trip_type", "date", "new_time")
 
 
 def merge(new: Intent, prev: Intent | None) -> Intent:
-    """Fill gaps from the previous turn: 'make it 8 instead' keeps trip + date (FR-10)."""
+    """Fill gaps from the previous turn (FR-9, FR-10).
+    Data Flow: prev intent (from checkpoint) + new intent -> one combined intent -> missing list.
+      'make it 8 instead'  -> keeps trip + date, new time
+      'drop' / 'tomorrow'  -> a bare answer to our question continues the same request"""
     if prev and prev.action in REQUIRED:
-        if new.action == "unclear" and new.new_time:  # bare "8 instead"
-            new = new.model_copy(update={"action": prev.action})
+        if new.action == "unclear" and any(getattr(new, f) for f in FIELDS):
+            new = new.model_copy(update={"action": prev.action})   # bare answer / "8 instead"
         if new.action == prev.action:
-            fill = {f: getattr(prev, f) for f in ("trip_type", "date", "new_time")
-                    if getattr(new, f) is None}
+            fill = {f: getattr(prev, f) for f in FIELDS if getattr(new, f) is None}
             new = new.model_copy(update=fill)
     # Code (not the LLM) decides what is still missing
     missing = [f for f in REQUIRED.get(new.action, []) if getattr(new, f) is None]

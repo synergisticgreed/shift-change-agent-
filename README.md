@@ -72,7 +72,7 @@ JWT ─► /chat ─► Understand (LLM) ─► Decide (code) ─► Reply (LLM)
 - **Rules in code.** Cut-off and capacity checks are plain Python and are re-checked before saving.
 - **LLM output is untrusted.** It's validated with Pydantic and retried once; if it's still invalid, the agent asks a question.
 - **Durable pause.** The LangGraph Postgres checkpointer keeps the paused conversation across restarts.
-- **Clear failures.** Timeouts, a full cab or a pending approval each get a plain next step. No stack traces.
+- **Clear failures.** Timeouts, a full cab or a pending approval each get a plain next step. Full traces go to the server log only (`app/errors.py`), and the user never sees a stack trace.
 
 ---
 

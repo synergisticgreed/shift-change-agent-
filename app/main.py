@@ -1,10 +1,12 @@
 """HTTP API (README: API table). Thin layer, no business logic.
 Data Flow: Client -> API route -> Auth dependency (JWT) -> agent.service / tools -> JSON response."""
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -13,6 +15,7 @@ from app.agent import service
 from app.auth import demo
 from app.auth.jwt import Identity, current_manager, current_user
 from app.db.store import init_db
+from app.errors import log
 from app.tools import requests as rq
 from app.tools import roster
 
@@ -24,6 +27,9 @@ async def lifespan(_):
     service.get_graph()
     yield
 
+
+# Server log: where every caught error's full trace goes (users only see plain text)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="Shift-Change Request Agent", lifespan=lifespan)
 app.include_router(demo.router)  # POST /demo/login/{persona}
@@ -40,9 +46,18 @@ class DecisionIn(BaseModel):
     note: str = ""
 
 
+@app.exception_handler(RequestValidationError)
+async def bad_input(_: Request, exc: RequestValidationError):
+    """Data Flow: invalid body/params -> plain 422 (FastAPI's default lists internals)."""
+    fields = sorted({str(e["loc"][-1]) for e in exc.errors() if e.get("loc")})
+    hint = f" Check: {', '.join(fields)}." if fields else ""
+    return JSONResponse(status_code=422, content={"detail": "That request isn't valid." + hint})
+
+
 @app.exception_handler(Exception)
-async def plain_error(_: Request, __: Exception):
-    """FR-11: never leak a stack trace."""
+async def plain_error(_: Request, exc: Exception):
+    """FR-11 last line of defence. Data Flow: any uncaught error -> log trace -> plain 500."""
+    log.error("unhandled error", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again."})
 
 

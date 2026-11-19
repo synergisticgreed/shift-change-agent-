@@ -152,8 +152,24 @@ Worst case in tests (slow LLM + retry): 3.55 s.
 | Cab just filled | "That seat was just taken. The next free slot is 20:30. Want it?" |
 | Waiting for manager | "Your request #42 is with your transport manager. I'll update you here." |
 | Approved but cab full / left | "Your manager approved request #42, but the cab filled up or already left, so your trip stays as it was." |
-| Manager clicks twice | Second click gets `404 "No pending request with that id."` |
+| Manager clicks twice | Second click gets `404 "No pending request with that id."` (or `409` if the first is still running) |
 | LLM down | Template reply, and the request is still handled by code |
+| Agent step crashes (a bug) | Same plain tool message; next message starts a fresh run (chat never stuck) |
+| Bad request body | `422 "That request isn't valid. Check: message."` |
+| Anything uncaught | `500 "Something went wrong. Please try again."` |
+
+**How errors are caught (FR-11)**
+
+```
+tool / DB error in a node ─► errors.tool_error(where) ─► log trace ─► {"outcome": "tool_error"} ─► template
+error in the graph itself  ─► service.chat except     ─► log trace ─► plain reply, status "failed"
+bad input                  ─► RequestValidationError  ─► plain 422
+anything else              ─► app exception handler   ─► log trace ─► plain 500
+```
+
+Writes run in one transaction, so any failure rolls back and nothing is half-changed. Postgres also gets `statement_timeout=2s` and `lock_timeout=1.5s`.
+
+**Clarifying questions (FR-9):** code computes `missing`, so the agent asks for one field per turn (trip → day → time). The time question lists the free cab times. A bare answer ("drop", "tomorrow", "7 pm") continues the same request through `intent.merge`. A message about both pickup and drop asks which one.
 | Bad token | `401`: "Please log in again." |
 
 ## 11. Concurrency (bonus)
@@ -176,3 +192,4 @@ Worst case in tests (slow LLM + retry): 3.55 s.
 | 2026-11-20 | Step 4: one rule path (`validate` + `load_facts`); new `trip_passed`/`stale` outcomes; seats before cut-off; locked write txns; company filter on approval update; booking nodes in `agent/booking.py` |
 | 2026-11-20 | Step 5: per-thread run lock; decisions only on `pending_approval`; idempotent `wait_manager` + self-healing paused chat; `failed` outcome; manager note in audit; multi-process restart test |
 | 2026-11-20 | Step 6: `llm/budget.py` (call cap + per-message deadline); Groq wall-clock limit + `max_tokens`; lock waits capped; `busy` outcome / 409; `llm_calls` + `elapsed_ms` in `/chat`; `eval/latency.py` |
+| 2026-11-20 | Step 7: bare answers continue a request; time question lists free cabs; both-trips asks; `app/errors.py` (log + plain); paused = has interrupt (crash no longer wedges chat); plain 422; Postgres timeouts |

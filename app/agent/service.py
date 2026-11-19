@@ -12,6 +12,7 @@ from langgraph.types import Command
 from app.agent.graph import build_graph, thread_id
 from app.agent.templates import render
 from app.auth.jwt import Identity
+from app.errors import log
 from app.llm.budget import new_deadline
 from app.tools import requests as rq
 
@@ -54,13 +55,14 @@ def get_graph():
 def chat(who: Identity, message: str) -> dict:
     """Data Flow: text -> lock (<=1 s) -> [paused? -> pending reply | heal]
                   -> graph.invoke(+ deadline = now + 3.5 s for ALL LLM calls) -> reply.
-    get_state(cfg) reads the saved checkpoint: .next == ("wait_manager",) means 'paused'."""
+    Paused = the saved checkpoint holds an interrupt (see _paused).
+    Errors: Data Flow: any exception -> log full trace -> plain "tool_error" reply (FR-11)."""
     t0 = time.perf_counter()
     tid = thread_id(who.company_id, who.user_id)
     g, cfg = get_graph(), _cfg(tid)
     try:
         with _hold(tid):
-            if g.get_state(cfg).next:            # paused for a manager
+            if _paused(g.get_state(cfg)):        # paused for a manager
                 req = rq.get_request(who, g.get_state(cfg).values["request_id"])
                 if req and req["status"] == "pending_approval":
                     return _pending(g, cfg)      # still waiting: don't start a new run
@@ -68,20 +70,29 @@ def chat(who: Identity, message: str) -> dict:
                 # resume it so wait_manager reports the recorded outcome (it never re-applies)
                 out = g.invoke(Command(resume={"decision": "sync", "by": "system"}), cfg)
             else:
+                # New input = new run from START. If an earlier run crashed mid-way, its
+                # unfinished step is dropped here, so a crash never locks the conversation.
                 out = g.invoke({"messages": [{"role": "user", "content": message}],
                                 "company_id": who.company_id, "employee_id": who.user_id,
                                 "deadline": new_deadline()}, cfg)   # one budget per message
-            if g.get_state(cfg).next:            # this message escalated -> now paused
+            if _paused(g.get_state(cfg)):        # this message escalated -> now paused
                 return _timed(_pending(g, cfg), t0, g.get_state(cfg).values.get("llm_calls", 0))
     except Busy:
         return _timed({"reply": render({"outcome": "busy"}), "request_id": None, "status": "busy"}, t0, 0)
-    except Exception:
+    except Exception:                            # a node/graph bug: trace to log, plain to user
+        log.exception("chat run failed for %s", tid)
         return _timed({"reply": render({"outcome": "tool_error"}), "request_id": None,
                        "status": "failed"}, t0, 0)
     outcome = out["result"]["outcome"]
     rid = out.get("request_id") if outcome in STATUS else None
     return _timed({"reply": out["reply"], "request_id": rid, "status": STATUS.get(outcome, outcome)},
                   t0, out.get("llm_calls", 0))
+
+
+def _paused(snap) -> bool:
+    """Waiting for a manager = the checkpoint holds an interrupt.
+    (`snap.next` alone is not enough: a crashed step also leaves `next` set.)"""
+    return bool(snap.interrupts)
 
 
 def _timed(resp: dict, t0: float, calls: int) -> dict:
@@ -100,7 +111,7 @@ def resume(manager: Identity, request_id: int, decision: str, note: str = "") ->
     with _hold(req["thread_id"]):                # 2nd click waits (<=1 s), then sees "not pending"
         req = rq.get_request(manager, request_id)
         snap = g.get_state(cfg)
-        if (req["status"] != "pending_approval" or snap.next != ("wait_manager",)
+        if (req["status"] != "pending_approval" or not _paused(snap)
                 or snap.values.get("request_id") != request_id):
             return None
         out = g.invoke(Command(resume={"decision": decision, "by": manager.user_id, "note": note}), cfg)

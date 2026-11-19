@@ -1,5 +1,6 @@
 """Plain replies for every outcome. Used when the LLM is down/over budget (FR-11).
 Data Flow: state["result"] {outcome, ...} -> render() -> draft text -> reply node (-> LLM polish)."""
+from app.errors import log
 
 ASK = {
     "trip_type": "Is this for your pickup or your drop?",
@@ -37,7 +38,15 @@ TEMPLATES = {
 
 
 def render(result: dict) -> str:
+    """Data Flow: result -> matching template -> text. A missing template/field is a bug in
+    our code, not the user's: fall back to a safe generic line instead of crashing the reply."""
     kind = result["outcome"]
-    if kind == "clarify":
-        return ASK.get(result["missing"][0], TEMPLATES["unclear"])
-    return TEMPLATES[kind].format(**result)
+    try:
+        if kind == "clarify":
+            if result.get("options"):   # real choices first, then the question
+                return f"Cabs with free seats: {result['options']}. What time would you like instead?"
+            return ASK.get(result["missing"][0], TEMPLATES["unclear"])
+        return TEMPLATES[kind].format(**result)
+    except (KeyError, IndexError):
+        log.exception("no template for result %s", kind)
+        return TEMPLATES["tool_error"]

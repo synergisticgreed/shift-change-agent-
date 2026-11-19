@@ -6,6 +6,7 @@ Data Flow: Intent -> roster tools (current trip, cab options) -> change dict
 from langgraph.types import interrupt
 
 from app.agent.state import identity
+from app.errors import tool_error
 from app.llm.budget import new_deadline
 from app.rules.engine import nearest_free
 from app.tools import checks, roster
@@ -40,7 +41,7 @@ def decide(s):
 
         reason, facts = checks.precheck(who, ch)  # rules decide, not the LLM
     except Exception:
-        return {"result": {"outcome": "tool_error"}, "offer": None}
+        return tool_error("decide")            # DB down / timeout -> plain reply, nothing changed
     if reason:
         return deny(who, ch, reason, facts, options)
     return {"change": ch, "offer": None}
@@ -90,9 +91,9 @@ def apply(s):
         try:
             return deny(who, ch, str(e), e.facts, full="seat_taken")
         except Exception:
-            return {"result": {"outcome": "tool_error"}}
-    except Exception:
-        return {"result": {"outcome": "tool_error"}}
+            return tool_error("apply/deny")
+    except Exception:                          # txn rolled back -> nothing changed
+        return tool_error("apply")
     return {"result": {"outcome": "applied", "time": now_on["depart_at"], "cab": ch["to_cab"], **base},
             "request_id": rid, "intent": None}  # done -> fresh context
 
@@ -105,7 +106,7 @@ def escalate(s):
     try:
         rid = rq.create_pending(identity(s), s["change"])
     except Exception:
-        return {"result": {"outcome": "tool_error"}}
+        return tool_error("escalate")
     return {"request_id": rid, "result": {"outcome": "pending", "request_id": rid}}
 
 

@@ -44,3 +44,7 @@
 - **Time budget:** each message gets one LLM deadline (3.5 s). Every call's timeout is `min(1.5 s, time left)`, and when time runs out the code falls back (keyword parser / template).
 - **Hard timeouts:** the Groq call has a wall-clock limit (not just httpx's per-phase timeouts) and capped `max_tokens`. DB lock waits are capped, and so is the wait for the per-conversation lock.
 - **Proof:** latency tests with slow and hanging LLMs, plus `python -m eval.latency` for p50/p95.
+
+## Step 7: Ambiguity & error handling (2026-11-20)
+- **Clarifying:** bare answers ("drop", "tomorrow", "7 pm") now continue the pending question. The time question lists the real free cab times. "Pickup and drop" in one message asks which one.
+- **Errors:** one helper (`app/errors.py`) logs the full trace on the server and gives the user a plain message. Bad input gets a plain 422. A crashed agent step no longer locks the conversation. Postgres gets statement/lock timeouts.
