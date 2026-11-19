@@ -27,7 +27,7 @@ def make_engine(url: str) -> Engine:
     @event.listens_for(eng, "connect")
     def _pragmas(conn, _):
         conn.isolation_level = None
-        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA busy_timeout = 1500")  # lock wait cap (writes hold it for ms)
         conn.execute("PRAGMA foreign_keys = ON")
 
     # Write txns take the write lock at BEGIN, BEFORE counting seats (last-seat race)

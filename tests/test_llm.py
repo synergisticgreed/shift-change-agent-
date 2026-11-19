@@ -20,7 +20,7 @@ class ScriptedLLM:
     def __init__(self, *answers):
         self.answers, self.calls = list(answers), 0
 
-    def complete(self, system, user, json_mode=False):
+    def complete(self, system, user, json_mode=False, timeout=None):
         self.calls += 1
         a = self.answers.pop(0)
         if isinstance(a, Exception):

@@ -193,7 +193,8 @@ async function send(text) {
   $("chatInput").value = "";
   try {
     const out = await api("POST", "/chat", { message: text });
-    addMsg("assistant", out.reply + "\n[status: " + out.status + "]");
+    // Show the two promised numbers: LLM calls (<= 4) and server time (p95 < 5 s)
+    addMsg("assistant", `${out.reply}\n[${out.status} · ${out.llm_calls} LLM calls · ${out.elapsed_ms} ms]`);
     await loadTrips();
   } catch (e) { addMsg("assistant", e.message); }
 }

@@ -38,3 +38,9 @@
 - **Real restart test:** separate OS processes for employee → manager → employee, sharing only the DB files.
 - **Safe resume:** one run per conversation at a time (per-thread lock). Decisions only apply to `pending_approval` requests (DB guard). A chat paused when the server crashed heals itself.
 - **Agent robustness tests:** bad LLM JSON is retried once, an LLM outage falls back to the keyword parser, and Groq errors become `LLMError`.
+
+## Step 6: Time & latency (2026-11-20)
+- **Call cap:** `llm/budget.py` counts every LLM call per message (hard stop at 4; the fixed graph needs at most 3).
+- **Time budget:** each message gets one LLM deadline (3.5 s). Every call's timeout is `min(1.5 s, time left)`, and when time runs out the code falls back (keyword parser / template).
+- **Hard timeouts:** the Groq call has a wall-clock limit (not just httpx's per-phase timeouts) and capped `max_tokens`. DB lock waits are capped, and so is the wait for the per-conversation lock.
+- **Proof:** latency tests with slow and hanging LLMs, plus `python -m eval.latency` for p50/p95.

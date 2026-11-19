@@ -6,6 +6,7 @@ Data Flow: Intent -> roster tools (current trip, cab options) -> change dict
 from langgraph.types import interrupt
 
 from app.agent.state import identity
+from app.llm.budget import new_deadline
 from app.rules.engine import nearest_free
 from app.tools import checks, roster
 from app.tools import requests as rq
@@ -144,7 +145,8 @@ def wait_manager(s):
 def _decided(who, ch, req):
     """Data Flow: final DB status of the request -> employee-facing result (single source of truth)."""
     base = {"trip": ch["trip_type"], "date": ch["date"], "request_id": req["id"]}
-    done = {"llm_calls": 0, "intent": None}
+    # Resume = new piece of work (maybe hours later): fresh call count + time budget for reply
+    done = {"llm_calls": 0, "deadline": new_deadline(), "intent": None}
     if req["status"] == "approved" and not ch["to_cab"]:
         return {"result": {"outcome": "approved_cancel", **base}, **done}
     if req["status"] == "approved":

@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     llm_provider: str = "fake"  # fake | groq
     llm_api_key: str = ""
     llm_model: str = "llama-3.1-8b-instant"
-    llm_timeout_s: float = 2.0
+    llm_timeout_s: float = 1.5   # one LLM call, wall clock
+    llm_budget_s: float = 3.5    # all LLM calls of one message together (p95 < 5 s)
+    llm_max_tokens: int = 150    # short outputs = fast outputs
     demo_mode: bool = True  # enables /demo/login for the UI; set False in production
 
 

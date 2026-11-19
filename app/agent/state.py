@@ -17,7 +17,8 @@ class AgentState(TypedDict, total=False):
     offer: dict | None          # what "yes" means next turn: alternative | escalate
     result: dict | None         # outcome decided by code
     request_id: int | None
-    llm_calls: int              # budget counter for this message
+    llm_calls: int              # LLM calls made for this message (cap 4, see llm/budget.py)
+    deadline: float             # epoch seconds: no LLM call may run past this
     reply: str
 
 

@@ -14,7 +14,7 @@ class FakeLLM:
     def __init__(self):
         self.calls = 0  # tests can assert on the budget
 
-    def complete(self, system: str, user: str, json_mode: bool = False) -> str:
+    def complete(self, system: str, user: str, json_mode: bool = False, timeout=None) -> str:
         self.calls += 1
         data = json.loads(user)
         if not json_mode:          # reply step: keep the code-written draft

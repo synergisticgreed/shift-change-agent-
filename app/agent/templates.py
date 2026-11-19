@@ -31,6 +31,7 @@ TEMPLATES = {
     "duplicate": "You already sent that exact request, so I didn't create another one.",
     "tool_error": "I couldn't reach the roster system. Nothing was changed. Please try again in a minute.",
     "nothing": "Okay, nothing was changed.",
+    "busy": "I'm still working on your last message. Please try again in a moment.",
     "unclear": "Sorry, I didn't get that. You can change, cancel or check a pickup/drop.",
 }
 

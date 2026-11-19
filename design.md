@@ -37,7 +37,7 @@ audit_log       (id, company_id, actor, action, details, at)
 { "message": "Can I leave at 8 tonight?" }
 // response
 { "reply": "Done! Your drop is now at 20:00 on cab C12.",
-  "request_id": 42, "status": "applied" }
+  "request_id": 42, "status": "applied", "llm_calls": 2, "elapsed_ms": 640 }
 ```
 
 **`POST /manager/requests/{id}/decision`**
@@ -120,13 +120,29 @@ change ─► load_facts (DB) ─► validate(facts) ─► None = allowed | rea
 
 ## 9. LLM budget (≤ 4)
 
-| Call | When |
-|---|---|
-| 1 | `understand` |
-| 2 | `understand` retry (only if output is invalid) |
-| 3 | `reply` |
+| Call | When | If refused / fails |
+|---|---|---|
+| 1 | `understand` | keyword parser |
+| 2 | `understand` retry (only if output is invalid JSON) | keyword parser |
+| 3 | `reply` (not for questions/errors) | template draft as is |
 
-Max 3. If `llm_calls` reaches 4, use a template reply.
+The fixed graph makes at most 3 calls. Every call goes through `llm/budget.ask()`, which refuses a call (`BudgetExceeded`) when:
+- 4 calls were already made for this message, or
+- less than 0.3 s is left before `state["deadline"]`.
+
+**Time limits (p95 < 5 s, NFR-1)**
+
+| Limit | Value | Where |
+|---|---|---|
+| All LLM calls of one message | 3.5 s (`LLM_BUDGET_S`) | `state["deadline"]` stamped in `service.chat` (and on manager resume) |
+| One LLM call (wall clock) | `min(1.5 s, time left)` | `budget.ask` → `GroqLLM` worker thread |
+| LLM output length | 150 tokens | `max_tokens` |
+| Wait for the conversation lock | 1 s → "busy" reply / 409 | `service._hold` |
+| Wait for a SQLite lock | 1.5 s | `busy_timeout` |
+| Our own code (measured) | p95 39 ms | auth + DB + rules + checkpoints |
+
+Measured with `python -m eval.latency` (simulated LLM with a 3% stall rate): p50 0.86 s, p95 1.96 s, max 2 calls.
+Worst case in tests (slow LLM + retry): 3.55 s.
 
 ## 10. Error messages
 
@@ -159,3 +175,4 @@ Max 3. If `llm_calls` reaches 4, use a template reply.
 | 2026-11-20 | Step 3: demo UI at `/`, `POST /demo/login/{persona}` (DEMO_MODE), `GET /chat/history` |
 | 2026-11-20 | Step 4: one rule path (`validate` + `load_facts`); new `trip_passed`/`stale` outcomes; seats before cut-off; locked write txns; company filter on approval update; booking nodes in `agent/booking.py` |
 | 2026-11-20 | Step 5: per-thread run lock; decisions only on `pending_approval`; idempotent `wait_manager` + self-healing paused chat; `failed` outcome; manager note in audit; multi-process restart test |
+| 2026-11-20 | Step 6: `llm/budget.py` (call cap + per-message deadline); Groq wall-clock limit + `max_tokens`; lock waits capped; `busy` outcome / 409; `llm_calls` + `elapsed_ms` in `/chat`; `eval/latency.py` |

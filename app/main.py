@@ -93,7 +93,10 @@ def pending(mgr: Identity = Depends(current_manager)):
 @app.post("/manager/requests/{request_id}/decision")
 def decide(request_id: int, body: DecisionIn, mgr: Identity = Depends(current_manager)):
     # Data Flow: manager JWT + decision -> service.resume -> paused graph wakes -> DB updated
-    out = service.resume(mgr, request_id, body.decision, body.note)
+    try:
+        out = service.resume(mgr, request_id, body.decision, body.note)
+    except service.Busy:  # the employee's conversation is mid-run; don't make the manager wait
+        raise HTTPException(409, "This request is being updated. Please try again in a moment.")
     if not out:
         raise HTTPException(404, "No pending request with that id.")
     return out

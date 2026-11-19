@@ -18,6 +18,7 @@ docker compose up --build     # API on http://localhost:8000
 | Local run (no Docker) | `pip install -r requirements.txt && uvicorn app.main:app`, then open http://localhost:8000 |
 | Local tests | `pytest -q` |
 | Fresh mock data (stop server first) | `python -m app.db.store reset` |
+| Latency benchmark (p50/p95) | `python -m eval.latency 60` |
 | Tests (fake LLM) | `docker compose run --rm api pytest -q` |
 | Evaluation set | `docker compose run --rm api python -m eval.run` |
 | Demo token | `docker compose run --rm api python -m app.auth.issue --company acme --employee E101` |
@@ -77,8 +78,9 @@ JWT ─► /chat ─► Understand (LLM) ─► Decide (code) ─► Reply (LLM)
 
 ## The two numbers
 
-- **≤ 4 LLM calls:** 2 LLM steps plus at most 1 retry = 3. A counter stops at 4.
-- **p95 < 5 s:** short prompts, a fast model, a 2 s LLM timeout with a template fallback.
+- **≤ 4 LLM calls:** 2 LLM steps plus at most 1 retry = 3. Every call goes through `llm/budget.ask()`, which refuses a 5th call.
+- **p95 < 5 s:** one 3.5 s LLM budget per message, each call capped at `min(1.5 s, time left)` by the wall clock, and 150-token outputs. When time runs out, code takes over (keyword parser / template).
+- **Measured:** `python -m eval.latency` → p50 0.86 s, p95 1.96 s, max 2 calls (simulated LLM). Every `/chat` reply carries `llm_calls` and `elapsed_ms`.
 
 ---
 
