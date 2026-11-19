@@ -1,14 +1,16 @@
 """HTTP API (README: API table). Thin layer, no business logic.
 Data Flow: Client -> API route -> Auth dependency (JWT) -> agent.service / tools -> JSON response."""
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from app import clock
 from app.agent import service
+from app.auth import demo
 from app.auth.jwt import Identity, current_manager, current_user
 from app.db.store import init_db
 from app.tools import requests as rq
@@ -24,6 +26,9 @@ async def lifespan(_):
 
 
 app = FastAPI(title="Shift-Change Request Agent", lifespan=lifespan)
+app.include_router(demo.router)  # POST /demo/login/{persona}
+
+UI_FILE = Path(__file__).parent / "static" / "index.html"
 
 
 class ChatIn(BaseModel):
@@ -46,6 +51,12 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/", include_in_schema=False)
+def ui():
+    # Data Flow: browser GET / -> static demo page (it then calls the API with a JWT)
+    return FileResponse(UI_FILE)
+
+
 @app.get("/me/trips")
 def my_trips(who: Identity = Depends(current_user)):
     # Data Flow [1] Client GET + Bearer JWT -> [2] current_user: JWT -> Identity
@@ -58,6 +69,12 @@ def my_trips(who: Identity = Depends(current_user)):
 def chat(body: ChatIn, who: Identity = Depends(current_user)):
     # Data Flow: {message} + JWT -> Identity -> service.chat -> {reply, request_id, status}
     return service.chat(who, body.message)
+
+
+@app.get("/chat/history")
+def chat_history(who: Identity = Depends(current_user)):
+    # Data Flow: JWT -> Identity -> own thread checkpoint -> [{role, content}]
+    return service.history(who)
 
 
 @app.get("/requests/{request_id}")

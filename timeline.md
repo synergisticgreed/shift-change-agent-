@@ -19,3 +19,9 @@
 - **JWT extraction:** token → checks (signature, expiry, role) → employee must exist in that company → `Identity`.
 - **New endpoint:** `GET /me/trips` shows the request → JWT → mock data path end to end.
 - Numbered `Data Flow [n]` comments along that path.
+
+## Step 3: Simple frontend demo (2026-11-20)
+- One static page (`app/static/index.html`, plain HTML + JS, no build step), served at `/`.
+- 3 login buttons: Acme employee, Globex employee, Acme manager. Each gets a real signed JWT from `POST /demo/login/{persona}` (demo mode only).
+- The page sends `Authorization: Bearer <jwt>` on every call: trips, chat, chat history, manager pending/approve/reject.
+- Added `GET /chat/history` so the employee can see the manager's decision message.

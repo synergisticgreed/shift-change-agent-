@@ -45,7 +45,10 @@ audit_log       (id, company_id, actor, action, details, at)
 { "decision": "approve", "note": "ok for today" }
 ```
 
-Other endpoints: `GET /me/trips`, `GET /requests/{id}`, `GET /manager/pending`, `GET /health`.
+Other endpoints: `GET /me/trips`, `GET /chat/history`, `GET /requests/{id}`, `GET /manager/pending`, `GET /health`.
+
+**Demo UI (`GET /`)**: buttons call `POST /demo/login/{persona}` (`acme_employee`, `globex_employee`, `acme_manager`), which returns `{token, name, role}`.
+It only works when `DEMO_MODE=true`; otherwise it returns 404. The page keeps the token in memory and sends it as `Bearer` on every call.
 
 ## 4. JWT claims
 
@@ -143,3 +146,4 @@ Max 3. If `llm_calls` reaches 4, use a template reply.
 | 2026-11-20 | Core built. Added `decline` action; `status`, `offer`, `wait_manager` nodes; request `date/trip_type/reason/thread_id`; dropped `policies.seat_capacity` (cab has capacity); SQLite for local dev |
 | 2026-11-20 | Step 1 bug pass: `same_time` + `approved_cancel` outcomes; offers expire after one turn; alternatives skip your own cab; `seq` in idempotency key; resume checks the thread is paused on that request |
 | 2026-11-20 | Step 2: JWT role + employee-exists checks; `GET /me/trips`; `python -m app.db.store reset` |
+| 2026-11-20 | Step 3: demo UI at `/`, `POST /demo/login/{persona}` (DEMO_MODE), `GET /chat/history` |

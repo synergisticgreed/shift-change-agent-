@@ -33,6 +33,7 @@ A chat agent that handles a shift-change request end to end, safely, for many co
 | FR-10 | Keep context across messages ("make it 8 instead"). |
 | FR-11 | On any failure, show a plain message with a next step. No stack traces, no hanging. |
 | FR-12 | Keep an audit log of who asked and who decided. |
+| FR-13 | A one-page demo UI with login buttons for a Company A employee, a Company B employee and a manager. It uses real JWTs. |
 
 ## 5. Non-functional requirements
 
@@ -63,5 +64,6 @@ A chat agent that handles a shift-change request end to end, safely, for many co
 ## 8. Out of scope
 
 - A real MoveInSync backend (we use mock data in Postgres)
-- A frontend UI (API only)
+- A production frontend (only the FR-13 demo page)
+- Real login (the demo page uses fixed personas)
 - Production key management

@@ -6,6 +6,7 @@
 
 | Component | Tech | Job |
 |---|---|---|
+| Demo UI | One HTML file + JS | Login buttons → JWT → calls the API (FR-13) |
 | API | FastAPI | Routes, JWT check, error handling |
 | Agent | LangGraph | Runs the conversation flow |
 | LLM client | Groq / Gemini | Understands messages, writes replies |
@@ -75,7 +76,8 @@ app/
   main.py        # FastAPI app
   config.py      # settings from .env
   clock.py       # "now" (frozen in tests)
-  auth/          # JWT
+  static/        # index.html demo UI
+  auth/          # JWT, demo login
   agent/         # graph, nodes, state, intent, templates, service
   llm/           # Groq + fake LLM
   tools/         # roster (read), requests (write)

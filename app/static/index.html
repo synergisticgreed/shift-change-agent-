@@ -1,0 +1,237 @@
+<!doctype html>
+<!--
+  Shift-Change Agent: demo UI (plain HTML + JS, no build step).
+  Data Flow overview:
+    [A] Login button -> POST /demo/login/{persona} -> signed JWT kept in a JS variable
+    [B] Every later call -> fetch(..., Authorization: Bearer <jwt>) -> FastAPI current_user
+        -> Identity(company, employee, role) -> tools filter by that company -> JSON -> render
+  The UI never sends company/employee ids itself: the backend reads them ONLY from the token.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shift-Change Agent Demo</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e4e7ec;
+          --brand:#2f6fed; --ok:#12805c; --bad:#c4320a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:16px; background:var(--card); border-bottom:1px solid var(--line); }
+  h1 { margin:0; font-size:18px; } h2 { margin:0 0 10px; font-size:15px; }
+  main { max-width:960px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  button { font:inherit; padding:7px 12px; border-radius:8px; border:1px solid var(--line);
+           background:#fff; cursor:pointer; }
+  button.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+  button.ok { color:var(--ok); } button.bad { color:var(--bad); }
+  button.active { outline:2px solid var(--brand); }
+  .muted { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px; border-bottom:1px solid var(--line); }
+  #chatLog { height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+             padding:8px; background:var(--bg); border-radius:8px; margin-bottom:8px; }
+  .msg { max-width:80%; padding:7px 10px; border-radius:10px; white-space:pre-wrap; }
+  .user { align-self:flex-end; background:var(--brand); color:#fff; }
+  .assistant { align-self:flex-start; background:#fff; border:1px solid var(--line); }
+  input[type=text] { flex:1; min-width:0; font:inherit; padding:8px; border:1px solid var(--line); border-radius:8px; }
+  pre { margin:0; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+  #netLog { max-height:180px; overflow-y:auto; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header><h1>Shift-Change Request Agent: demo</h1>
+  <div class="muted">Pick a user. The page gets a JWT and sends it on every request.</div></header>
+
+<main>
+  <!-- [A] Login: each button maps to one hardcoded persona on the backend -->
+  <section class="card">
+    <h2>1. Log in as</h2>
+    <div class="row">
+      <button data-persona="acme_employee">Acme employee (Asha)</button>
+      <button data-persona="globex_employee">Globex employee (Ivan)</button>
+      <button data-persona="acme_manager">Acme manager (Meera)</button>
+    </div>
+    <p id="who" class="muted">Not logged in.</p>
+    <pre id="claims" class="muted"></pre>
+  </section>
+
+  <!-- Employee view: trips + chat -->
+  <section id="employeeView" class="card hidden">
+    <h2>2. My upcoming trips <button id="refreshTrips">Refresh</button></h2>
+    <table><thead><tr><th>Date</th><th>Trip</th><th>Time</th><th>Cab</th></tr></thead>
+      <tbody id="trips"></tbody></table>
+
+    <h2 style="margin-top:14px">3. Chat with the agent</h2>
+    <div id="chatLog"></div>
+    <form id="chatForm" class="row">
+      <input id="chatInput" type="text" maxlength="500" placeholder="e.g. Move my drop tomorrow to 19:00" autocomplete="off">
+      <button class="primary" type="submit">Send</button>
+    </form>
+    <div class="row muted" style="margin-top:8px">Try:
+      <button class="example">Move my drop tomorrow to 19:00</button>
+      <button class="example">Move my drop tomorrow to 20:30</button>
+      <button class="example">Can I leave a bit late tomorrow?</button>
+      <button class="example">yes</button>
+      <button class="example">any update?</button>
+    </div>
+  </section>
+
+  <!-- Manager view: pending approvals -->
+  <section id="managerView" class="card hidden">
+    <h2>2. Pending approvals <button id="refreshPending">Refresh</button></h2>
+    <table><thead><tr><th>#</th><th>Employee</th><th>Date</th><th>Trip</th><th>From → To</th><th>Reason</th><th></th></tr></thead>
+      <tbody id="pending"></tbody></table>
+    <p id="decisionMsg" class="muted"></p>
+  </section>
+
+  <!-- Network log: shows the JWT riding along on each call -->
+  <section class="card">
+    <h2>Network log</h2>
+    <div id="netLog"></div>
+  </section>
+</main>
+
+<script>
+let token = null;  // JWT from [A]; lives only in memory (gone on page reload)
+
+const $ = (id) => document.getElementById(id);
+
+// Small DOM helper: build an element with text (textContent = no HTML injection)
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+// Data Flow [B]: every API call goes through here and carries the Bearer token
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  let res;
+  try {
+    res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    logNet(method, path, "network error");
+    throw new Error("Can't reach the server. Is it running?");
+  }
+  const data = await res.json().catch(() => ({}));  // non-JSON body -> empty object
+  logNet(method, path, res.status);
+  if (!res.ok) throw new Error(data.detail || "Request failed.");
+  return data;
+}
+
+function logNet(method, path, status) {
+  const short = token ? "Bearer " + token.slice(0, 16) + "…" : "(no token)";
+  $("netLog").prepend(el("pre", `${method} ${path}  →  ${status}    ${short}`));
+}
+
+// Decode the JWT payload (middle part) just to SHOW it. Verifying is the server's job.
+function claimsOf(jwt) {
+  const b64 = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  return JSON.parse(atob(b64.padEnd(b64.length + (4 - b64.length % 4) % 4, "=")));
+}
+
+// Data Flow [A]: button -> /demo/login/{persona} -> token -> show the right view
+async function login(persona, btn) {
+  token = null;
+  try {
+    const out = await api("POST", "/demo/login/" + persona);
+    token = out.token;
+    document.querySelectorAll("[data-persona]").forEach(b => b.classList.toggle("active", b === btn));
+    $("who").textContent = "Logged in as " + out.name;
+    $("claims").textContent = "JWT claims: " + JSON.stringify(claimsOf(token));
+    const isManager = out.role === "manager";
+    $("employeeView").classList.toggle("hidden", isManager);
+    $("managerView").classList.toggle("hidden", !isManager);
+    if (isManager) { await loadPending(); } else { await loadTrips(); await loadHistory(); }
+  } catch (e) { $("who").textContent = e.message; }
+}
+
+// Data Flow: GET /me/trips + JWT -> current_user -> roster.list_trips -> table
+async function loadTrips() {
+  const body = $("trips"); body.replaceChildren();
+  try {
+    const out = await api("GET", "/me/trips");
+    if (!out.trips.length) body.append(row(["No upcoming trips", "", "", ""]));
+    out.trips.forEach(t => body.append(row([t.date, t.trip_type, t.depart_at, t.cab_id])));
+  } catch (e) { body.append(row([e.message, "", "", ""])); }
+}
+
+// One table row; a cell can be text or a DOM node (e.g. buttons)
+function row(cells) {
+  const tr = el("tr");
+  cells.forEach(c => {
+    const td = el("td");
+    if (c instanceof Node) td.append(c); else td.textContent = c;
+    tr.append(td);
+  });
+  return tr;
+}
+
+// Data Flow: GET /chat/history + JWT -> own thread checkpoint -> chat bubbles
+async function loadHistory() {
+  $("chatLog").replaceChildren();
+  try { (await api("GET", "/chat/history")).forEach(m => addMsg(m.role, m.content)); }
+  catch (e) { addMsg("assistant", e.message); }
+}
+
+function addMsg(role, text) {
+  const log = $("chatLog");
+  log.append(el("div", text, "msg " + (role === "user" ? "user" : "assistant")));
+  log.scrollTop = log.scrollHeight;
+}
+
+// Data Flow: text -> POST /chat + JWT -> agent graph -> {reply, status} -> bubble + refresh trips
+async function send(text) {
+  text = text.trim();
+  if (!text) return;
+  addMsg("user", text);
+  $("chatInput").value = "";
+  try {
+    const out = await api("POST", "/chat", { message: text });
+    addMsg("assistant", out.reply + "\n[status: " + out.status + "]");
+    await loadTrips();
+  } catch (e) { addMsg("assistant", e.message); }
+}
+
+// Data Flow: GET /manager/pending + manager JWT -> own company's pending requests -> table
+async function loadPending() {
+  const body = $("pending"); body.replaceChildren();
+  try {
+    const list = await api("GET", "/manager/pending");
+    if (!list.length) body.append(row(["No pending requests", "", "", "", "", "", ""]));
+    list.forEach(r => {
+      const btns = el("div", undefined, "row");
+      const ok = el("button", "Approve", "ok"), no = el("button", "Reject", "bad");
+      ok.onclick = () => decide(r.id, "approve");
+      no.onclick = () => decide(r.id, "reject");
+      btns.append(ok, no);
+      body.append(row([String(r.id), r.employee_id, r.date, r.trip_type,
+                       `${r.from_cab} → ${r.to_cab || "cancel"}`, r.reason || "", btns]));
+    });
+  } catch (e) { body.append(row([e.message, "", "", "", "", "", ""])); }
+}
+
+// Data Flow: Approve/Reject -> POST /manager/requests/{id}/decision + JWT
+//            -> service.resume -> paused agent wakes -> DB updated -> employee's chat gets the outcome
+async function decide(id, decision) {
+  try {
+    const out = await api("POST", `/manager/requests/${id}/decision`, { decision });
+    $("decisionMsg").textContent = `#${id} → ${out.status}. Employee will see: "${out.employee_reply}"`;
+  } catch (e) { $("decisionMsg").textContent = e.message; }
+  await loadPending();
+}
+
+// Wire up buttons
+document.querySelectorAll("[data-persona]").forEach(b => b.onclick = () => login(b.dataset.persona, b));
+document.querySelectorAll(".example").forEach(b => b.onclick = () => send(b.textContent));
+$("chatForm").onsubmit = (e) => { e.preventDefault(); send($("chatInput").value); };
+$("refreshTrips").onclick = loadTrips;
+$("refreshPending").onclick = loadPending;
+</script>
+</body>
+</html>

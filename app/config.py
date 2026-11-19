@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "llama-3.1-8b-instant"
     llm_timeout_s: float = 2.0
+    demo_mode: bool = True  # enables /demo/login for the UI; set False in production
 
 
 settings = Settings()

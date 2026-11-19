@@ -15,7 +15,7 @@ docker compose up --build     # API on http://localhost:8000
 
 | Task | Command |
 |---|---|
-| Local run (no Docker) | `pip install -r requirements.txt && uvicorn app.main:app` |
+| Local run (no Docker) | `pip install -r requirements.txt && uvicorn app.main:app`, then open http://localhost:8000 |
 | Local tests | `pytest -q` |
 | Fresh mock data (stop server first) | `python -m app.db.store reset` |
 | Tests (fake LLM) | `docker compose run --rm api pytest -q` |
@@ -40,8 +40,11 @@ docker compose up --build     # API on http://localhost:8000
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/` | Demo UI (login buttons, chat, manager approvals) |
+| `POST` | `/demo/login/{persona}` | Demo-only JWT for a fixed persona |
 | `GET` | `/me/trips` | Employee sees their upcoming pickups/drops |
 | `POST` | `/chat` | Employee sends a message |
+| `GET` | `/chat/history` | Employee's conversation, including the manager's outcome |
 | `GET` | `/requests/{id}` | Employee checks request status |
 | `GET` | `/manager/pending` | Manager lists pending requests (own company) |
 | `POST` | `/manager/requests/{id}/decision` | Manager approves/rejects → agent resumes |

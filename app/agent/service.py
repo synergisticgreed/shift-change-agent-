@@ -52,6 +52,12 @@ def resume(manager: Identity, request_id: int, decision: str, note: str = "") ->
     return {"request_id": request_id, "status": final["status"], "employee_reply": out["reply"]}
 
 
+def history(who: Identity) -> list[dict]:
+    """Data Flow: Identity -> own thread_id -> checkpoint -> messages (incl. manager's outcome)."""
+    snap = get_graph().get_state(_cfg(thread_id(who.company_id, who.user_id)))
+    return snap.values.get("messages", [])
+
+
 def _pending(g, cfg) -> dict:
     rid = g.get_state(cfg).values["request_id"]
     return {"reply": render({"outcome": "pending", "request_id": rid}),
