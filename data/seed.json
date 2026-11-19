@@ -1,0 +1,45 @@
+{
+  "companies": [
+    {"id": "acme", "name": "Acme Corp", "cutoff_minutes": 120, "seats": 4},
+    {"id": "globex", "name": "Globex Inc", "cutoff_minutes": 240, "seats": 6}
+  ],
+  "employees": [
+    ["acme", "E101", "Asha", "employee"],
+    ["acme", "E102", "Bilal", "employee"],
+    ["acme", "E103", "Chen", "employee"],
+    ["acme", "E104", "Divya", "employee"],
+    ["acme", "E105", "Eli", "employee"],
+    ["acme", "E106", "Farah", "employee"],
+    ["acme", "E107", "Gopal", "employee"],
+    ["acme", "E108", "Hana", "employee"],
+    ["acme", "M1", "Meera", "manager"],
+    ["globex", "G201", "Ivan", "employee"],
+    ["globex", "G202", "Jaya", "employee"],
+    ["globex", "M2", "Karan", "manager"]
+  ],
+  "cabs": [
+    ["acme", "A-P1", "North loop", "pickup", "08:00"],
+    ["acme", "A-P2", "North loop", "pickup", "09:00"],
+    ["acme", "A-D1", "North loop", "drop", "18:00"],
+    ["acme", "A-D2", "North loop", "drop", "19:00"],
+    ["acme", "A-D3", "North loop", "drop", "20:00"],
+    ["acme", "A-D4", "North loop", "drop", "20:30"],
+    ["globex", "G-P1", "East line", "pickup", "07:30"],
+    ["globex", "G-D1", "East line", "drop", "17:00"],
+    ["globex", "G-D2", "East line", "drop", "19:00"]
+  ],
+  "roster_note": "[company, employee, day offset from today, trip, cab]. A-D3 has 1 seat left, A-D4 is full.",
+  "roster": [
+    ["acme", "E101", 1, "pickup", "A-P1"],
+    ["acme", "E101", 1, "drop", "A-D1"],
+    ["acme", "E102", 1, "drop", "A-D3"],
+    ["acme", "E103", 1, "drop", "A-D3"],
+    ["acme", "E104", 1, "drop", "A-D3"],
+    ["acme", "E105", 1, "drop", "A-D4"],
+    ["acme", "E106", 1, "drop", "A-D4"],
+    ["acme", "E107", 1, "drop", "A-D4"],
+    ["acme", "E108", 1, "drop", "A-D4"],
+    ["globex", "G201", 1, "drop", "G-D1"],
+    ["globex", "G202", 1, "drop", "G-D1"]
+  ]
+}

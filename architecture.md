@@ -11,7 +11,7 @@
 | LLM client | Groq / Gemini | Understands messages, writes replies |
 | Tools | Python functions | Roster, cab options, requests |
 | Rule engine | Plain Python | Cut-off and seat checks |
-| Database | Postgres | Data, audit log, agent checkpoints |
+| Database | Postgres (SQLite locally) | Data, audit log, agent checkpoints |
 
 ## 2. Big picture
 
@@ -73,10 +73,12 @@ docker compose up
 ```
 app/
   main.py        # FastAPI app
+  config.py      # settings from .env
+  clock.py       # "now" (frozen in tests)
   auth/          # JWT
-  agent/         # graph, nodes, state
-  llm/           # real + fake LLM
-  tools/         # roster, cabs, requests
+  agent/         # graph, nodes, state, intent, templates, service
+  llm/           # Groq + fake LLM
+  tools/         # roster (read), requests (write)
   rules/         # rule engine
   db/            # schema, seed
 data/            # seed.json

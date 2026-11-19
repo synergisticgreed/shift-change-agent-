@@ -15,6 +15,8 @@ docker compose up --build     # API on http://localhost:8000
 
 | Task | Command |
 |---|---|
+| Local run (no Docker) | `pip install -r requirements.txt && uvicorn app.main:app` |
+| Local tests | `pytest -q` |
 | Tests (fake LLM) | `docker compose run --rm api pytest -q` |
 | Evaluation set | `docker compose run --rm api python -m eval.run` |
 | Demo token | `docker compose run --rm api python -m app.auth.issue --company acme --employee E101` |
@@ -29,7 +31,7 @@ docker compose up --build     # API on http://localhost:8000
 | Agent | LangGraph | Clear flow + `interrupt()` for manager approval |
 | Store | Postgres | Data, audit log and agent checkpoints in one place |
 | Auth | JWT | Carries `company_id` and `employee_id` |
-| LLM | Groq / Gemini (free) | Swappable; tests use a fake |
+| LLM | Groq (free) | Swappable; tests use a fake |
 
 ---
 

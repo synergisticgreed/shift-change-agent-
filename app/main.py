@@ -1,0 +1,72 @@
+"""HTTP API (README: API table). Thin layer, no business logic.
+Data Flow: Client -> API route -> Auth dependency (JWT) -> agent.service / tools -> JSON response."""
+from contextlib import asynccontextmanager
+from typing import Literal
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from app.agent import service
+from app.auth.jwt import Identity, current_manager, current_user
+from app.db.store import init_db
+from app.tools import requests as rq
+
+
+@asynccontextmanager
+async def lifespan(_):
+    # Data Flow (startup): seed.json -> DB tables; checkpoint file -> agent graph
+    init_db()
+    service.get_graph()
+    yield
+
+
+app = FastAPI(title="Shift-Change Request Agent", lifespan=lifespan)
+
+
+class ChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+
+
+class DecisionIn(BaseModel):
+    decision: Literal["approve", "reject"]
+    note: str = ""
+
+
+@app.exception_handler(Exception)
+async def plain_error(_: Request, __: Exception):
+    """FR-11: never leak a stack trace."""
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again."})
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.post("/chat")
+def chat(body: ChatIn, who: Identity = Depends(current_user)):
+    # Data Flow: {message} + JWT -> Identity -> service.chat -> {reply, request_id, status}
+    return service.chat(who, body.message)
+
+
+@app.get("/requests/{request_id}")
+def get_request(request_id: int, who: Identity = Depends(current_user)):
+    req = rq.get_request(who, request_id)
+    if not req:
+        raise HTTPException(404, "Request not found.")  # same reply for other company's ids
+    return req
+
+
+@app.get("/manager/pending")
+def pending(mgr: Identity = Depends(current_manager)):
+    return rq.list_pending(mgr)
+
+
+@app.post("/manager/requests/{request_id}/decision")
+def decide(request_id: int, body: DecisionIn, mgr: Identity = Depends(current_manager)):
+    # Data Flow: manager JWT + decision -> service.resume -> paused graph wakes -> DB updated
+    out = service.resume(mgr, request_id, body.decision, body.note)
+    if not out:
+        raise HTTPException(404, "No pending request with that id.")
+    return out

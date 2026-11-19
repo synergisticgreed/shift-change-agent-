@@ -6,15 +6,19 @@
 
 ```
 companies       (id, name)
-policies        (company_id, trip_type, cutoff_minutes, seat_capacity)
+policies        (company_id, trip_type, cutoff_minutes)
 employees       (company_id, id, name, role)
-cabs            (company_id, id, route, trip_type, depart_at, capacity)
-roster          (company_id, employee_id, date, trip_type, cab_id)
-shift_requests  (id, company_id, employee_id, from_cab, to_cab,
-                 status, idempotency_key UNIQUE, created_at,
-                 decided_by, decided_at)
+cabs            (company_id, id, route, trip_type, depart_at "HH:MM", capacity)
+roster          (company_id, employee_id, date "YYYY-MM-DD", trip_type, cab_id)
+shift_requests  (id, company_id, employee_id, date, trip_type, from_cab, to_cab,
+                 status, reason, thread_id, idempotency_key UNIQUE,
+                 created_at, decided_by, decided_at)
 audit_log       (id, company_id, actor, action, details, at)
 ```
+
+- A cab runs daily at `depart_at`; seats booked = roster rows for that cab + date.
+- `to_cab = NULL` means a cancel. `thread_id` is the chat to resume after approval.
+- Local dev uses SQLite; Docker uses Postgres (same SQLAlchemy tables).
 
 **Request status:** `applied`, `rejected`, `pending_approval`, `approved`, `declined`, `failed`
 
@@ -65,7 +69,7 @@ class AgentState(TypedDict):
 
 ```python
 class Intent(BaseModel):
-    action: Literal["change_time", "cancel", "status", "confirm", "unclear"]
+    action: Literal["change_time", "cancel", "status", "confirm", "decline", "unclear"]
     trip_type: Literal["pickup", "drop"] | None
     date: date | None
     new_time: time | None
@@ -76,12 +80,17 @@ class Intent(BaseModel):
 
 | Node | LLM? | What it does |
 |---|---|---|
-| `understand` | Yes | Message → `Intent` |
+| `understand` | Yes | Message → `Intent`, merged with the last intent (FR-10) |
 | `clarify` | No | Asks about anything in `missing` |
+| `status` | No | Latest request of this employee |
+| `offer` | No | Handles "yes"/"no" to the last offer (alternative cab or escalate) |
 | `decide` | No | Roster + cab options + rule check |
-| `apply` | No | Saves the change in one transaction |
-| `escalate` | No | Creates a pending request, calls `interrupt()` |
-| `reply` | Yes | Writes a friendly message from `result` |
+| `apply` | No | Saves the change in one transaction (rules re-checked) |
+| `escalate` | No | Creates a pending request |
+| `wait_manager` | No | Calls `interrupt()`; on resume applies or declines |
+| `reply` | Yes | Rewrites the template draft; times/ids must survive or the draft is used |
+
+`missing` is computed by code, not trusted from the LLM. If the LLM is down, `understand` falls back to a keyword parser so code still handles the request.
 
 ## 8. Rules
 
@@ -119,10 +128,13 @@ Max 3. If `llm_calls` reaches 4, use a template reply.
 ## 11. Concurrency (bonus)
 
 - `SELECT ... FOR UPDATE` on the cab row before booking a seat.
-- `idempotency_key = hash(company, employee, date, trip, cab)` with a `UNIQUE` constraint.
+- `idempotency_key = hash(company, employee, date, trip, from_cab, to_cab, seq)` with a `UNIQUE` constraint.
+  `seq` = requests already made for that trip: a double submit shares `seq` (blocked), a later repeat doesn't (allowed).
 
 ## 12. Change log
 
 | Date | Change |
 |---|---|
 | 2026-11-19 | First version |
+| 2026-11-20 | Core built. Added `decline` action; `status`, `offer`, `wait_manager` nodes; request `date/trip_type/reason/thread_id`; dropped `policies.seat_capacity` (cab has capacity); SQLite for local dev |
+| 2026-11-20 | Step 1 bug pass: `same_time` + `approved_cancel` outcomes; offers expire after one turn; alternatives skip your own cab; `seq` in idempotency key; resume checks the thread is paused on that request |
