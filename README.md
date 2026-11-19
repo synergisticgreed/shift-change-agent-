@@ -17,6 +17,7 @@ docker compose up --build     # API on http://localhost:8000
 |---|---|
 | Local run (no Docker) | `pip install -r requirements.txt && uvicorn app.main:app` |
 | Local tests | `pytest -q` |
+| Fresh mock data (stop server first) | `python -m app.db.store reset` |
 | Tests (fake LLM) | `docker compose run --rm api pytest -q` |
 | Evaluation set | `docker compose run --rm api python -m eval.run` |
 | Demo token | `docker compose run --rm api python -m app.auth.issue --company acme --employee E101` |
@@ -39,6 +40,7 @@ docker compose up --build     # API on http://localhost:8000
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/me/trips` | Employee sees their upcoming pickups/drops |
 | `POST` | `/chat` | Employee sends a message |
 | `GET` | `/requests/{id}` | Employee checks request status |
 | `GET` | `/manager/pending` | Manager lists pending requests (own company) |

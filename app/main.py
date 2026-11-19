@@ -7,10 +7,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app import clock
 from app.agent import service
 from app.auth.jwt import Identity, current_manager, current_user
 from app.db.store import init_db
 from app.tools import requests as rq
+from app.tools import roster
 
 
 @asynccontextmanager
@@ -42,6 +44,14 @@ async def plain_error(_: Request, __: Exception):
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/me/trips")
+def my_trips(who: Identity = Depends(current_user)):
+    # Data Flow [1] Client GET + Bearer JWT -> [2] current_user: JWT -> Identity
+    #           -> [3] roster.list_trips(Identity) -> mock data (SQLite) -> [4] JSON
+    return {"company_id": who.company_id, "employee_id": who.user_id,
+            "trips": roster.list_trips(who, clock.now().date().isoformat())}
 
 
 @app.post("/chat")

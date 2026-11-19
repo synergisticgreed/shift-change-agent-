@@ -13,3 +13,9 @@
 - Added `Data Flow:` comments to every module.
 - Bug pass: fixed same-cab requests, repeat requests wrongly flagged as duplicates, the resume guard, and the reply fact check.
 - Added `timeline.md` (this file).
+
+## Step 2: MVP — mock data & JWT identity (2026-11-20)
+- **Mock data:** `data/seed.json` → SQLite. 2 companies with different cut-offs/seats. Added a `reset` command so seed dates never go stale.
+- **JWT extraction:** token → checks (signature, expiry, role) → employee must exist in that company → `Identity`.
+- **New endpoint:** `GET /me/trips` shows the request → JWT → mock data path end to end.
+- Numbered `Data Flow [n]` comments along that path.

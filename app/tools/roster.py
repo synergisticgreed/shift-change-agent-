@@ -8,6 +8,19 @@ from app.db import store
 from app.db.schema import cabs, policies, roster
 
 
+def list_trips(who: Identity, from_day: str) -> list[dict]:
+    """Data Flow [3]: Identity -> roster JOIN cabs (own company + own employee, from today on)
+    -> [{date, trip_type, cab_id, depart_at, route}]."""
+    q = (select(roster.c.date, roster.c.trip_type, roster.c.cab_id, cabs.c.depart_at, cabs.c.route)
+         .join(cabs, and_(cabs.c.company_id == roster.c.company_id, cabs.c.id == roster.c.cab_id))
+         .where(roster.c.company_id == who.company_id,    # tenant filter
+                roster.c.employee_id == who.user_id,      # only this employee
+                roster.c.date >= from_day)                # ISO dates sort as text
+         .order_by(roster.c.date, cabs.c.depart_at))
+    with store.engine.connect() as conn:
+        return [dict(r) for r in conn.execute(q).mappings()]
+
+
 def get_trip(who: Identity, day: str, trip: str) -> dict | None:
     """The employee's booked cab for that day/trip, or None."""
     q = (select(roster.c.cab_id, cabs.c.depart_at)

@@ -45,13 +45,17 @@ audit_log       (id, company_id, actor, action, details, at)
 { "decision": "approve", "note": "ok for today" }
 ```
 
-Other endpoints: `GET /requests/{id}`, `GET /manager/pending`, `GET /health`.
+Other endpoints: `GET /me/trips`, `GET /requests/{id}`, `GET /manager/pending`, `GET /health`.
 
 ## 4. JWT claims
 
 ```json
 { "sub": "E101", "company_id": "acme", "role": "employee", "exp": 1700000000 }
 ```
+
+A token is accepted only if: HS256 signature is valid, it is not expired, all 4 claims exist,
+`role` is `employee|manager`, and `(company_id, sub, role)` exists in `employees`.
+Any failure → the same `401 "Please log in again."`.
 
 ## 5. Agent state
 
@@ -138,3 +142,4 @@ Max 3. If `llm_calls` reaches 4, use a template reply.
 | 2026-11-19 | First version |
 | 2026-11-20 | Core built. Added `decline` action; `status`, `offer`, `wait_manager` nodes; request `date/trip_type/reason/thread_id`; dropped `policies.seat_capacity` (cab has capacity); SQLite for local dev |
 | 2026-11-20 | Step 1 bug pass: `same_time` + `approved_cancel` outcomes; offers expire after one turn; alternatives skip your own cab; `seq` in idempotency key; resume checks the thread is paused on that request |
+| 2026-11-20 | Step 2: JWT role + employee-exists checks; `GET /me/trips`; `python -m app.db.store reset` |
