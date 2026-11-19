@@ -91,26 +91,32 @@ class Intent(BaseModel):
 | `clarify` | No | Asks about anything in `missing` |
 | `status` | No | Latest request of this employee |
 | `offer` | No | Handles "yes"/"no" to the last offer (alternative cab or escalate) |
-| `decide` | No | Roster + cab options + rule check |
-| `apply` | No | Saves the change in one transaction (rules re-checked) |
-| `escalate` | No | Creates a pending request |
-| `wait_manager` | No | Calls `interrupt()`; on resume applies or declines |
+| `decide` | No | Roster + cab options → `checks.precheck` (`booking.py`) |
+| `apply` | No | Saves in one locked transaction, rules re-checked (`booking.py`) |
+| `escalate` | No | Creates a pending request (`booking.py`) |
+| `wait_manager` | No | Calls `interrupt()`; on resume applies or declines (`booking.py`) |
 | `reply` | Yes | Rewrites the template draft; times/ids must survive or the draft is used |
 
 `missing` is computed by code, not trusted from the LLM. If the LLM is down, `understand` falls back to a keyword parser so code still handles the request.
 
 ## 8. Rules
 
-```python
-def check_cutoff(policy, scheduled_at, now) -> bool:
-    # change must come at least cutoff_minutes before the trip
-    return scheduled_at - now >= timedelta(minutes=policy.cutoff_minutes)
+All rules live in code (`rules/validate.py`), never in an LLM prompt. The inputs come from the DB (`tools/checks.py`), filtered by the token's company.
 
-def has_seat(cab, booked) -> bool:
-    return booked < cab.capacity
+```
+change ─► load_facts (DB) ─► validate(facts) ─► None = allowed | reason
 ```
 
-If there's no seat, offer the nearest cab time that has one.
+| Order | Reason | Rule | Next step for the employee |
+|---|---|---|---|
+| 1 | `stale` | Roster still shows the cab the change starts from | "Please send it again" |
+| 2 | `trip_passed` | The old or new trip has not departed | None. Not even a manager can approve it. |
+| 3 | `cab_full` | `booked (excluding me) < capacity` | Offer the nearest cab with a free seat (not my current cab) |
+| 4 | `cutoff` | Earliest of old/new trip is ≥ `cutoff_minutes` away | Offer to escalate to the manager |
+
+- The same `validate()` runs twice: as a pre-check in `booking.decide` and again inside the locked save transaction in `requests.apply_change`.
+- A manager approval sets `override_cutoff=True`. That skips rule 4 only, so seats and departed trips are still enforced.
+- Seats are checked before the cut-off, so a full cab is never escalated.
 
 ## 9. LLM budget (≤ 4)
 
@@ -129,12 +135,16 @@ Max 3. If `llm_calls` reaches 4, use a template reply.
 | Tool timeout | "I couldn't reach the roster system. Nothing was changed. Please try again in a minute." |
 | Cab just filled | "That seat was just taken. The next free slot is 20:30. Want it?" |
 | Waiting for manager | "Your request #42 is with your transport manager. I'll update you here." |
+| Approved but cab full / left | "Your manager approved request #42, but the cab filled up or already left, so your trip stays as it was." |
+| Manager clicks twice | Second click gets `404 "No pending request with that id."` |
 | LLM down | Template reply, and the request is still handled by code |
 | Bad token | `401`: "Please log in again." |
 
 ## 11. Concurrency (bonus)
 
-- `SELECT ... FOR UPDATE` on the cab row before booking a seat.
+- Writes use `store.write_txn()`, which takes the lock **before** counting seats:
+  SQLite runs `BEGIN IMMEDIATE`, and Postgres runs `SELECT ... FOR UPDATE` on the cab row.
+  A threaded test proves exactly one of two people gets the last seat.
 - `idempotency_key = hash(company, employee, date, trip, from_cab, to_cab, seq)` with a `UNIQUE` constraint.
   `seq` = requests already made for that trip: a double submit shares `seq` (blocked), a later repeat doesn't (allowed).
 
@@ -147,3 +157,5 @@ Max 3. If `llm_calls` reaches 4, use a template reply.
 | 2026-11-20 | Step 1 bug pass: `same_time` + `approved_cancel` outcomes; offers expire after one turn; alternatives skip your own cab; `seq` in idempotency key; resume checks the thread is paused on that request |
 | 2026-11-20 | Step 2: JWT role + employee-exists checks; `GET /me/trips`; `python -m app.db.store reset` |
 | 2026-11-20 | Step 3: demo UI at `/`, `POST /demo/login/{persona}` (DEMO_MODE), `GET /chat/history` |
+| 2026-11-20 | Step 4: one rule path (`validate` + `load_facts`); new `trip_passed`/`stale` outcomes; seats before cut-off; locked write txns; company filter on approval update; booking nodes in `agent/booking.py` |
+| 2026-11-20 | Step 5: per-thread run lock; decisions only on `pending_approval`; idempotent `wait_manager` + self-healing paused chat; `failed` outcome; manager note in audit; multi-process restart test |

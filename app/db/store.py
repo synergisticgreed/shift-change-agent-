@@ -2,6 +2,7 @@
 Data Flow: settings.database_url -> engine -> tools/* open transactions on it.
            data/seed.json -> _seed -> tables (first start only)."""
 import json
+from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -20,16 +21,36 @@ def make_engine(url: str) -> Engine:
         return create_engine(url, pool_pre_ping=True)
     eng = create_engine(url, connect_args={"check_same_thread": False})
 
-    # SQLite: wait for locks instead of failing; enforce foreign keys
+    # SQLite: wait for locks instead of failing; enforce foreign keys.
+    # isolation_level=None stops the driver opening transactions late (after our reads),
+    # so WE control BEGIN below.
     @event.listens_for(eng, "connect")
     def _pragmas(conn, _):
+        conn.isolation_level = None
         conn.execute("PRAGMA busy_timeout = 5000")
         conn.execute("PRAGMA foreign_keys = ON")
+
+    # Write txns take the write lock at BEGIN, BEFORE counting seats (last-seat race)
+    @event.listens_for(eng, "begin")
+    def _begin(conn):
+        immediate = conn.get_execution_options().get("write_lock", False)
+        conn.exec_driver_sql("BEGIN IMMEDIATE" if immediate else "BEGIN")
 
     return eng
 
 
 engine = make_engine(settings.database_url)
+
+
+@contextmanager
+def write_txn():
+    """One locked write transaction.
+    Data Flow: tool -> write_txn -> [SQLite: BEGIN IMMEDIATE | Postgres: BEGIN + FOR UPDATE rows]
+               -> reads + writes see a stable view -> COMMIT (or ROLLBACK on any error)."""
+    with engine.connect() as conn:
+        conn.execution_options(write_lock=True)
+        with conn.begin():
+            yield conn
 
 
 def init_db(eng: Engine = None) -> None:

@@ -1,11 +1,11 @@
-"""Read tools: the employee's trip, cab options, company policy.
+"""Read tools: the employee's trips and cab options (rule facts live in checks.py).
 Every query is filtered by who.company_id (tenant isolation, NFR-3).
 Data Flow: agent node + Identity(from JWT) -> query DB (own company only) -> plain dicts."""
 from sqlalchemy import and_, func, select
 
 from app.auth.jwt import Identity
 from app.db import store
-from app.db.schema import cabs, policies, roster
+from app.db.schema import cabs, roster
 
 
 def list_trips(who: Identity, from_day: str) -> list[dict]:
@@ -44,10 +44,3 @@ def list_options(who: Identity, day: str, trip: str) -> list[dict]:
          .order_by(cabs.c.depart_at))
     with store.engine.connect() as conn:
         return [dict(r) for r in conn.execute(q).mappings()]
-
-
-def get_cutoff(who: Identity, trip: str) -> int:
-    q = select(policies.c.cutoff_minutes).where(
-        policies.c.company_id == who.company_id, policies.c.trip_type == trip)
-    with store.engine.connect() as conn:
-        return conn.execute(q).scalar_one()

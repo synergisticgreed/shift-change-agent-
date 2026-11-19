@@ -12,6 +12,7 @@ from functools import partial
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
+from app.agent import booking as b
 from app.agent import nodes as n
 from app.agent.state import AgentState
 from app.config import settings
@@ -26,10 +27,10 @@ def build_graph(llm: LLM | None = None, checkpoint_path: str | None = None):
     g.add_node("clarify", n.clarify)
     g.add_node("status", n.status)
     g.add_node("offer", n.offer)
-    g.add_node("decide", n.decide)
-    g.add_node("apply", n.apply)
-    g.add_node("escalate", n.escalate)
-    g.add_node("wait_manager", n.wait_manager)
+    g.add_node("decide", b.decide)          # booking nodes: rules + writes
+    g.add_node("apply", b.apply)
+    g.add_node("escalate", b.escalate)
+    g.add_node("wait_manager", b.wait_manager)
     g.add_node("reply", partial(n.reply, llm=llm))
 
     g.add_edge(START, "understand")
@@ -37,13 +38,16 @@ def build_graph(llm: LLM | None = None, checkpoint_path: str | None = None):
     g.add_edge("clarify", "reply")
     g.add_edge("status", "reply")
     g.add_conditional_edges("offer", n.route_offer, ["apply", "escalate", "reply"])
-    g.add_conditional_edges("decide", n.route_decide, ["apply", "reply"])
+    g.add_conditional_edges("decide", b.route_decide, ["apply", "reply"])
     g.add_edge("apply", "reply")
-    g.add_conditional_edges("escalate", n.route_escalate, ["wait_manager", "reply"])
+    g.add_conditional_edges("escalate", b.route_escalate, ["wait_manager", "reply"])
     g.add_edge("wait_manager", "reply")
     g.add_edge("reply", END)
 
-    # Durable state on disk -> a paused chat survives a restart (FR-8)
+    # PERSIST (FR-8): after EVERY node, LangGraph writes the full state to this SQLite file,
+    # keyed by thread_id. A run stopped by interrupt() is just a saved state whose
+    # "next" node is wait_manager. A new process opens the same file and can resume it.
+    # Data Flow: node returns -> state merged -> SqliteSaver.put(thread_id, state) -> disk
     conn = sqlite3.connect(checkpoint_path or settings.checkpoint_db, check_same_thread=False)
     return g.compile(checkpointer=SqliteSaver(conn))
 

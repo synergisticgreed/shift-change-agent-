@@ -25,3 +25,16 @@
 - 3 login buttons: Acme employee, Globex employee, Acme manager. Each gets a real signed JWT from `POST /demo/login/{persona}` (demo mode only).
 - The page sends `Authorization: Bearer <jwt>` on every call: trips, chat, chat history, manager pending/approve/reject.
 - Added `GET /chat/history` so the employee can see the manager's decision message.
+
+## Step 4: Strict business rules & isolation (2026-11-20)
+- **One rule path:** `rules/validate.py` decides allow/deny. `tools/checks.py` loads its inputs from the DB. The agent's pre-check and the save-time re-check both use it.
+- **Rule order:** trip already departed → no free seat → cut-off. A departed trip can never be escalated or approved.
+- **Last seat:** writes take the DB write lock before counting seats, so two people can't both get the last one.
+- **Isolation:** every write also filters by `company_id`, and cross-company tests run against each tool.
+- Split the booking nodes out of `nodes.py` into `agent/booking.py`.
+
+## Step 5: Manager escalation & agent workflow (2026-11-20)
+- **Pause → persist → resume:** commented end to end (`interrupt()` → SQLite checkpoint → `Command(resume)`).
+- **Real restart test:** separate OS processes for employee → manager → employee, sharing only the DB files.
+- **Safe resume:** one run per conversation at a time (per-thread lock). Decisions only apply to `pending_approval` requests (DB guard). A chat paused when the server crashed heals itself.
+- **Agent robustness tests:** bad LLM JSON is retried once, an LLM outage falls back to the keyword parser, and Groq errors become `LLMError`.

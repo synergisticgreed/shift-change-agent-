@@ -1,6 +1,10 @@
 """Entry points the API calls: chat (employee) and resume (manager).
 Data Flow: API -> chat(Identity, text) -> graph.invoke(thread) -> {reply, request_id, status}
-           API -> resume(manager, id) -> Command(resume) on the paused thread -> final status."""
+           API -> resume(manager, id) -> Command(resume) on the paused thread -> final status.
+One conversation = one thread_id = "company:employee". Its state lives in the checkpoint file,
+so any server process (e.g. after a restart) can pick it up."""
+import threading
+
 from langgraph.types import Command
 
 from app.agent.graph import build_graph, thread_id
@@ -11,7 +15,17 @@ from app.tools import requests as rq
 graph = None  # built on startup (tests may replace it)
 
 STATUS = {"applied": "applied", "cancelled": "applied", "pending": "pending_approval",
-          "approved": "approved", "approved_cancel": "approved", "declined": "declined"}
+          "approved": "approved", "approved_cancel": "approved",
+          "declined": "declined", "failed": "failed"}
+
+# One run per conversation at a time (employee message vs manager click vs double click)
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock(tid: str) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(tid, threading.Lock())
 
 
 def get_graph():
@@ -22,14 +36,24 @@ def get_graph():
 
 
 def chat(who: Identity, message: str) -> dict:
-    g, cfg = get_graph(), _cfg(thread_id(who.company_id, who.user_id))
+    """Data Flow: text -> [paused? -> pending reply | heal] -> graph.invoke -> reply.
+    get_state(cfg) reads the saved checkpoint: .next == ("wait_manager",) means 'paused'."""
+    tid = thread_id(who.company_id, who.user_id)
+    g, cfg = get_graph(), _cfg(tid)
     try:
-        if g.get_state(cfg).next:       # paused for a manager: don't start a new run
-            return _pending(g, cfg)
-        out = g.invoke({"messages": [{"role": "user", "content": message}],
-                        "company_id": who.company_id, "employee_id": who.user_id}, cfg)
-        if g.get_state(cfg).next:       # this message escalated
-            return _pending(g, cfg)
+        with _lock(tid):
+            if g.get_state(cfg).next:            # paused for a manager
+                req = rq.get_request(who, g.get_state(cfg).values["request_id"])
+                if req and req["status"] == "pending_approval":
+                    return _pending(g, cfg)      # still waiting: don't start a new run
+                # Decided in DB but the thread is still paused (server died mid-resume):
+                # resume it so wait_manager reports the recorded outcome (it never re-applies)
+                out = g.invoke(Command(resume={"decision": "sync", "by": "system"}), cfg)
+            else:
+                out = g.invoke({"messages": [{"role": "user", "content": message}],
+                                "company_id": who.company_id, "employee_id": who.user_id}, cfg)
+            if g.get_state(cfg).next:            # this message escalated -> now paused
+                return _pending(g, cfg)
     except Exception:
         return {"reply": render({"outcome": "tool_error"}), "request_id": None, "status": "failed"}
     outcome = out["result"]["outcome"]
@@ -38,16 +62,20 @@ def chat(who: Identity, message: str) -> dict:
 
 
 def resume(manager: Identity, request_id: int, decision: str, note: str = "") -> dict | None:
-    """Manager decision -> resume the paused conversation (works after restart)."""
-    req = rq.get_request(manager, request_id)  # filtered by manager's company
-    if not req or req["status"] != "pending_approval":
+    """Manager decision -> resume the paused conversation (works after a restart).
+    Data Flow: request (manager's company only) -> its thread_id -> checkpoint still paused
+               on THIS request? -> Command(resume=decision) -> wait_manager -> final DB status."""
+    req = rq.get_request(manager, request_id)    # filtered by manager's company
+    if not req:
         return None
     g, cfg = get_graph(), _cfg(req["thread_id"])
-    snap = g.get_state(cfg)
-    # Only resume if that thread is paused on THIS request
-    if snap.next != ("wait_manager",) or snap.values.get("request_id") != request_id:
-        return None
-    out = g.invoke(Command(resume={"decision": decision, "by": manager.user_id, "note": note}), cfg)
+    with _lock(req["thread_id"]):                # 2nd click waits, then sees "not pending"
+        req = rq.get_request(manager, request_id)
+        snap = g.get_state(cfg)
+        if (req["status"] != "pending_approval" or snap.next != ("wait_manager",)
+                or snap.values.get("request_id") != request_id):
+            return None
+        out = g.invoke(Command(resume={"decision": decision, "by": manager.user_id, "note": note}), cfg)
     final = rq.get_request(manager, request_id)
     return {"request_id": request_id, "status": final["status"], "employee_reply": out["reply"]}
 

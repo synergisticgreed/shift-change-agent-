@@ -49,17 +49,28 @@
 
 ## 4. Approval flow
 
-1. Agent creates a `pending_approval` request and calls `interrupt()`.
-2. LangGraph saves the state to Postgres. The service can restart safely.
-3. Manager calls `/manager/requests/{id}/decision`.
-4. API resumes the same thread with the decision.
-5. Agent applies or rejects the change and records it in the audit log.
+```
+PAUSE    escalate: DB row "pending_approval" ─► wait_manager: interrupt()
+PERSIST  state {change, request_id, messages} ─► checkpoint file, key "company:employee"
+         (server can stop here; the employee's /chat now replies "with your manager")
+RESUME   POST /manager/requests/{id}/decision ─► service.resume
+         ─► checks: manager's company, still pending, thread paused on THIS id
+         ─► graph.invoke(Command(resume=decision)) ─► wait_manager runs again from the top
+         ─► approve: apply_change (cut-off overridden; seats + departed still checked)
+            reject:  close_request ─► reply appended to the employee's chat
+```
+
+Safety on resume:
+- **One run per conversation:** a per-thread lock in `service.py`, so a double click or a message at the same moment waits its turn.
+- **Decide once:** an approval or rejection only applies while the DB status is still `pending_approval`.
+- **Crash replay:** `wait_manager` reads the DB status first and never applies twice. If the server died between the DB commit and the checkpoint save, the employee's next message resumes the thread and reports the recorded outcome.
+- Proven by `tests/test_restart.py` (3 separate OS processes) and `tests/test_escalation.py`.
 
 ## 5. Safety boundaries
 
-- **Tenant isolation:** every query is filtered by `company_id` from the token.
-- **LLM sandbox:** the LLM only picks intent and writes text. It never sees IDs from other companies and cannot call the database directly.
-- **Rules:** checked twice, once before the decision and again inside the save transaction.
+- **Tenant isolation:** every read **and write** is filtered by `company_id` from the token. Asking for another company's cab or request finds nothing (`NoResultFound` / 404). Cab foreign keys include `company_id`.
+- **LLM sandbox:** the LLM only picks intent and writes text. Its prompts contain no rules, no roster and no other company's data, and it can't call the database.
+- **Rules:** one function (`rules/validate.py`) checked twice: once before the decision and again inside the locked save transaction.
 
 ## 6. Deployment
 
@@ -78,10 +89,10 @@ app/
   clock.py       # "now" (frozen in tests)
   static/        # index.html demo UI
   auth/          # JWT, demo login
-  agent/         # graph, nodes, state, intent, templates, service
+  agent/         # graph, nodes (chat), booking (rules + writes), state, intent, templates, service
   llm/           # Groq + fake LLM
-  tools/         # roster (read), requests (write)
-  rules/         # rule engine
+  tools/         # roster (read), checks (rule facts), requests (write)
+  rules/         # engine (small checks), validate (allow/deny)
   db/            # schema, seed
 data/            # seed.json
 eval/            # cases.jsonl, runner
