@@ -6,7 +6,7 @@ Data Flow: service stamps state["deadline"] = now + LLM_BUDGET_S when a message 
 
 Time plan for one message (worst case):
     our code (auth + DB + rules + checkpoints)   ~0.05 s  (measured p95 39 ms)
-    LLM budget, all calls together                3.50 s  (each call capped at 1.5 s)
+    LLM budget, all calls together                3.50 s  (each call capped at 2 s)
     lock waits (conversation lock / SQLite lock)  capped separately (see service, store)
     -> stays under 5 s even when the LLM is slow or hanging."""
 import time

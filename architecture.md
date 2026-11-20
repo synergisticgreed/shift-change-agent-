@@ -92,7 +92,7 @@ app/
   static/        # index.html demo UI
   auth/          # JWT, demo login
   agent/         # graph, nodes (chat), booking (rules + writes), state, intent, templates, service
-  llm/           # Groq + fake LLM
+  llm/           # Gemini + Groq (OpenAI-compatible) + fake LLM
   tools/         # roster (read), checks (rule facts), requests (write)
   rules/         # engine (small checks), validate (allow/deny)
   db/            # schema, seed

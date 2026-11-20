@@ -40,7 +40,7 @@ def _timed_chat(ctx, monkeypatch, llm, msg="Move my drop tomorrow to 19:00"):
 
 
 def test_slow_llm_every_call_still_under_5s(ctx, monkeypatch):
-    llm = SlowLLM(1.4, [GOOD])                       # just under the 1.5 s per-call cap
+    llm = SlowLLM(1.4, [GOOD])                       # under the 2 s per-call cap
     r, took = _timed_chat(ctx, monkeypatch, llm)
     assert r["status"] == "applied" and took < LIMIT_S
     assert r["llm_calls"] == llm.calls == 2
@@ -80,7 +80,7 @@ def test_call_timeout_never_exceeds_time_left(monkeypatch):
             seen["t"] = timeout
             return "ok"
     budget.ask(Spy(), {"deadline": time.time() + 0.8}, 0, "s", "u")
-    assert 0.3 < seen["t"] <= 0.8                    # min(1.5 s cap, ~0.8 s left)
+    assert 0.3 < seen["t"] <= 0.8                    # min(2 s cap, ~0.8 s left)
 
 
 def test_groq_has_a_wall_clock_limit(monkeypatch):

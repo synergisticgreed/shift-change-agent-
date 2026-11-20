@@ -10,7 +10,7 @@ A chat agent that handles employee cab shift-change requests for multiple compan
 
 ```bash
 docker compose up --build     # UI + API on http://localhost:8000 (fake LLM, no key needed)
-# optional: cp .env.example .env and set LLM_PROVIDER=groq + LLM_API_KEY
+# optional: cp .env.example .env and set LLM_PROVIDER=gemini (or groq) + LLM_API_KEY
 ```
 
 | Task | Command |
@@ -35,7 +35,7 @@ docker compose up --build     # UI + API on http://localhost:8000 (fake LLM, no 
 | Agent | LangGraph | Clear flow + `interrupt()` for manager approval |
 | Store | Postgres + SQLite checkpoint file | App data and audit log in Postgres; paused chats in a checkpoint file on a Docker volume |
 | Auth | JWT | Carries `company_id` and `employee_id` |
-| LLM | Groq (free) | Swappable; tests use a fake |
+| LLM | Groq `openai/gpt-oss-20b` (default) or Gemini, free tiers | Swappable; no key = fake LLM; tests use a fake |
 
 ---
 
@@ -81,7 +81,7 @@ JWT ─► /chat ─► Understand (LLM) ─► Decide (code) ─► Reply (LLM)
 ## The two numbers
 
 - **≤ 4 LLM calls:** 2 LLM steps plus at most 1 retry = 3. Every call goes through `llm/budget.ask()`, which refuses a 5th call.
-- **p95 < 5 s:** one 3.5 s LLM budget per message, each call capped at `min(1.5 s, time left)` by the wall clock, and 150-token outputs. When time runs out, code takes over (keyword parser / template).
+- **p95 < 5 s:** one 3.5 s LLM budget per message, each call capped at `min(2 s, time left)` by the wall clock, and 300-token outputs. When time runs out, code takes over (keyword parser / template).
 - **Measured:** `python -m eval.latency` → p50 0.86 s, p95 1.96 s, max 2 calls (simulated LLM). Every `/chat` reply carries `llm_calls` and `elapsed_ms`.
 
 ---

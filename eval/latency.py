@@ -1,6 +1,6 @@
 """Latency benchmark: p50 / p95 / max per /chat message + max LLM calls (NFR-1, NFR-2).
 Usage:  python -m eval.latency [n_messages]          # simulated LLM latency (no key needed)
-        LLM_PROVIDER=groq LLM_API_KEY=... python -m eval.latency 40   # real Groq
+        LLM_PROVIDER=gemini LLM_API_KEY=... python -m eval.latency 40  # real LLM (or groq)
 Data Flow: script -> HTTP /chat (TestClient, full app) -> agent -> timed -> summary table."""
 import os
 import random
@@ -39,7 +39,7 @@ class SimulatedLLM(FakeLLM):
 
 
 def main(n: int) -> None:
-    real = settings.llm_provider == "groq"
+    real = settings.llm_provider in ("groq", "gemini") and bool(settings.llm_api_key)
     if not real:
         service.graph = build_graph(SimulatedLLM(), f"{workdir}/cp.db")
     times, calls = [], []
@@ -53,7 +53,7 @@ def main(n: int) -> None:
             calls.append(r["llm_calls"])
     times.sort()
     p = lambda q: times[min(len(times) - 1, int(q * len(times)))]  # noqa: E731
-    print(f"LLM: {'Groq ' + settings.llm_model if real else 'simulated'}   messages: {n}")
+    print(f"LLM: {settings.llm_provider + ' ' + (settings.llm_model or 'default model') if real else 'simulated'}   messages: {n}")
     print(f"p50 {p(.50):.2f}s   p95 {p(.95):.2f}s   max {times[-1]:.2f}s   (target p95 < 5s)")
     print(f"LLM calls per message: max {max(calls)}   avg {sum(calls) / n:.1f}   (target <= 4)")
 

@@ -53,3 +53,30 @@
 - **One command:** `docker compose up --build` starts Postgres (app data, healthchecked) and the API (seeds on start, UI at :8000). The agent's checkpoints live in a named volume. A `.env` file is optional.
 - **Bugs found by running the real stack:** Postgres rejected `col IS 'value'` (now `IS NOT DISTINCT FROM`). The container clock is UTC, which shifted "tomorrow" and cut-offs by 5½ h (now `APP_TZ`). The eval couldn't write its results as the non-root user. A missing `.env` broke `compose up`.
 - **Verified in Docker:** fresh `up --build` with no `.env`; escalation → `docker compose restart api` → manager approves over HTTP; last-seat and double-submit races on Postgres. 98 tests and 22/22 eval cases pass inside the container.
+
+## Step 9: Question - how a cab change is stored, and what chats with the user (2026-11-20)
+- **Asked:** does an Acme cab change really write to the DB, how data flows, and is an LLM used. No code changed.
+- **Found:** the cab change is written in one transaction (`tools/requests.py` apply_change): roster row deleted and re-inserted, `shift_requests` row, `audit_log` row. The chat is a LangGraph state machine (`agent/graph.py`), not an LLM agent. With `LLM_PROVIDER=fake` (the current .env) no LLM is called at all.
+
+## Step 10: Gemini LLM (2026-11-20)
+- **Why:** the agent works without an LLM (keyword parser + templates). A real LLM adds better understanding of free-form messages ("can I go home an hour later?") and friendlier replies. Rules and DB writes stay in code.
+- **Added:** `GeminiLLM` in `app/llm/client.py`, which reuses the Groq client: same OpenAI-compatible shape, Gemini URL, default model `gemini-3.5-flash-lite`, minimal thinking. JSON is asked for in the prompt and markdown fences are stripped. The existing validate/retry/fallback still guards it.
+- **Safety:** `LLM_PROVIDER=gemini` with an empty `LLM_API_KEY` falls back to the fake LLM with a log warning instead of failing every call.
+- **Config:** `.env` now has `LLM_PROVIDER=gemini`. Paste the key into `LLM_API_KEY`. `LLM_MODEL` is optional.
+- **Tests:** 2 new (Gemini request + fence strip, no-key fallback). 100 pass. Not yet run against the real Gemini API (no key here).
+
+## Step 11: Live Gemini check (2026-11-20)
+- **Ran:** 2 real calls through `GeminiLLM` with the agent's own prompts. No code changed. The key is in `.env` (git-ignored).
+- **Works:** the understand call returned valid JSON that passed `Intent` validation. The reply rewrite kept every fact (fact guard passed).
+- **Problem 1, latency:** 6.87 s and 2.71 s, while the app allows 1.5 s per call and 3.5 s per message. In the app, most Gemini calls would time out and quietly fall back to the keyword parser / template.
+- **Problem 2, relative time:** "an hour later, my drop is at 6 pm" came back as 18:00, not 19:00. The prompt has no rule for relative times.
+
+## Step 12: Groq live (2026-11-20)
+- **Found:** Groq returned 404, because the default `llama-3.1-8b-instant` has been retired. The key can use `openai/gpt-oss-20b`, `openai/gpt-oss-120b` and `qwen/qwen3.8-27b`.
+- **Changed:** the Groq default model is now `openai/gpt-oss-20b`, with `reasoning_effort=low` and hidden reasoning. `max_tokens` 150 -> 300 so the reasoning cannot crowd out the answer. Per-call cap 1.5 s -> 2 s. The message budget stays 3.5 s, so p95 < 5 s still holds.
+- **Live result (2 calls):** understand 1.49 s with valid JSON (`Intent` OK). Reply 1.24 s with all facts kept. Gemini was 6.87 s / 2.71 s, so `.env` now uses `LLM_PROVIDER=groq`; the Gemini key is kept as a comment.
+- **Still open:** "an hour later, my drop is at 6 pm" gives 18:00. The prompt has no rule for relative times.
+- **Tests:** 100 pass.
+
+## Step 13: Manual UI test guide (2026-11-20)
+- **Asked:** how to run the app and test it by hand in the UI. No code changed. I wrote a step-by-step scenario: change, full cab + offer, no cab, clarify, status, cancel, company isolation, cut-off escalation with manager approve/decline, and the restart survival check.

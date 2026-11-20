@@ -8,7 +8,8 @@ import pytest
 
 from app.agent import service
 from app.agent.graph import build_graph
-from app.llm.client import GroqLLM, LLMError
+from app.config import settings
+from app.llm.client import GeminiLLM, GroqLLM, LLMError, get_llm
 from tests.conftest import TOMORROW, booked_cab
 
 GOOD = json.dumps({"action": "change_time", "trip_type": "drop", "date": TOMORROW, "new_time": "19:00"})
@@ -84,3 +85,27 @@ def test_groq_happy_path(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: httpx.Response(
         200, json=ok, request=httpx.Request("POST", GroqLLM.URL)))
     assert GroqLLM().complete("sys", "user") == "hi"
+
+
+def test_gemini_sends_json_prompt_and_strips_fences(monkeypatch):
+    """Data Flow (tested): GeminiLLM -> Gemini URL + reasoning_effort -> fenced JSON -> clean JSON."""
+    seen = {}
+
+    def fake_post(url, json, **k):
+        seen.update(url=url, body=json)
+        ok = {"choices": [{"message": {"content": '```json\n{"action": "status"}\n```'}}]}
+        return httpx.Response(200, json=ok, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    assert GeminiLLM().complete("sys", "user", json_mode=True) == '{"action": "status"}'
+    assert seen["url"] == GeminiLLM.URL and seen["body"]["model"] == GeminiLLM.MODEL
+    assert "response_format" not in seen["body"]
+
+
+def test_no_key_means_fake_llm(monkeypatch):
+    from app.llm.fake import FakeLLM
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(settings, "llm_api_key", "")
+    assert isinstance(get_llm(), FakeLLM)
+    monkeypatch.setattr(settings, "llm_api_key", "k")
+    assert isinstance(get_llm(), GeminiLLM)

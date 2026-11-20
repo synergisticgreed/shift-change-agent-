@@ -136,8 +136,8 @@ The fixed graph makes at most 3 calls. Every call goes through `llm/budget.ask()
 | Limit | Value | Where |
 |---|---|---|
 | All LLM calls of one message | 3.5 s (`LLM_BUDGET_S`) | `state["deadline"]` stamped in `service.chat` (and on manager resume) |
-| One LLM call (wall clock) | `min(1.5 s, time left)` | `budget.ask` → `GroqLLM` worker thread |
-| LLM output length | 150 tokens | `max_tokens` |
+| One LLM call (wall clock) | `min(2 s, time left)` | `budget.ask` → `GroqLLM` / `GeminiLLM` worker thread |
+| LLM output length | 300 tokens (gpt-oss reasons a little, hidden) | `max_tokens` |
 | Wait for the conversation lock | 1 s → "busy" reply / 409 | `service._hold` |
 | Wait for a SQLite lock | 1.5 s | `busy_timeout` |
 | Our own code (measured) | p95 39 ms | auth + DB + rules + checkpoints |
@@ -195,3 +195,5 @@ Writes run in one transaction, so any failure rolls back and nothing is half-cha
 | 2026-11-20 | Step 6: `llm/budget.py` (call cap + per-message deadline); Groq wall-clock limit + `max_tokens`; lock waits capped; `busy` outcome / 409; `llm_calls` + `elapsed_ms` in `/chat`; `eval/latency.py` |
 | 2026-11-20 | Step 7: bare answers continue a request; time question lists free cabs; both-trips asks; `app/errors.py` (log + plain); paused = has interrupt (crash no longer wedges chat); plain 422; Postgres timeouts |
 | 2026-11-20 | Step 8: Docker (Postgres + checkpoint volume, optional .env, non-root, healthchecks); Postgres fix `IS` → `IS NOT DISTINCT FROM`; clock in `APP_TZ` (container is UTC) + `real_today()` for seed dates; `eval/run.py` (22 cases) → `eval/cases.jsonl` + `EVALUATION.md` |
+| 2026-11-20 | Step 10: `GeminiLLM` (OpenAI-compatible endpoint, default `gemini-3.5-flash-lite`, `reasoning_effort=minimal`, JSON asked in prompt + code-fence strip); `LLM_PROVIDER=gemini`; `LLM_MODEL` empty = provider default; provider without key → fake LLM |
+| 2026-11-20 | Step 12: Groq default model `openai/gpt-oss-20b` (llama-3.1-8b-instant retired) with `reasoning_effort=low` + hidden reasoning; `max_tokens` 150 → 300; per-call cap 1.5 s → 2 s (message budget still 3.5 s) |
