@@ -97,7 +97,25 @@ The tests use a fake LLM, so they never depend on API quota. They cover:
 - tool failure
 - ambiguous requests
 
-`python -m eval.run` runs 22 edge cases, each on a fresh DB, and writes `eval/cases.jsonl` (`id, input, expected, actual, pass, notes`) plus [EVALUATION.md](EVALUATION.md). A case passes only if its behaviour matches **and** every message stayed within 4 LLM calls and 5 s.
+`python -m eval.run` runs 22 edge cases, each on a fresh DB, and writes `eval/cases.jsonl` plus [EVALUATION.md](EVALUATION.md).
+
+**Evaluation set ([eval/cases.jsonl](eval/cases.jsonl)):** one JSON line per case, always with the same fields:
+
+| Field | Meaning |
+|---|---|
+| `id` | Case id (`E01`…`E22`) |
+| `input` | The message(s) the employee sends |
+| `expected` | The behaviour we want |
+| `actual` | What the agent actually did (outcome + final DB state) |
+| `pass` | `true` / `false` |
+| `notes` | What the case tests, plus the max LLM calls and ms per message |
+
+**How a case is judged:** it passes only if `actual` matches `expected`, checked against the reply outcome **and** the roster/request rows in the DB. Every message must also stay within 4 LLM calls and 5 s.
+
+Example line:
+```json
+{"id": "E01", "input": "Move my drop tomorrow to 19:00", "expected": "applied, now on A-D2", "actual": "applied, now on A-D2", "pass": true, "notes": "Happy path. max 2 LLM calls, max 107 ms per message"}
+```
 
 ---
 
