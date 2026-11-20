@@ -53,4 +53,3 @@
 - **One command:** `docker compose up --build` starts Postgres (app data, healthchecked) and the API (seeds on start, UI at :8000). The agent's checkpoints live in a named volume. A `.env` file is optional.
 - **Bugs found by running the real stack:** Postgres rejected `col IS 'value'` (now `IS NOT DISTINCT FROM`). The container clock is UTC, which shifted "tomorrow" and cut-offs by 5½ h (now `APP_TZ`). The eval couldn't write its results as the non-root user. A missing `.env` broke `compose up`.
 - **Verified in Docker:** fresh `up --build` with no `.env`; escalation → `docker compose restart api` → manager approves over HTTP; last-seat and double-submit races on Postgres. 98 tests and 22/22 eval cases pass inside the container.
-- **Evaluation:** `python -m eval.run` runs the edge-case scenarios, each on a fresh DB, and writes `eval/cases.jsonl` with exactly `id, input, expected, actual, pass, notes`. Summary in `EVALUATION.md`.
