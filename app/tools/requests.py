@@ -70,8 +70,8 @@ def create_pending(who: Identity, ch: dict) -> int:
     """Escalate: store a pending_approval request (idempotent on retry/resume)."""
     with store.write_txn() as conn:
         found = conn.execute(select(shift_requests.c.id).where(
-            *_same_trip(who, ch), shift_requests.c.from_cab.is_(ch["from_cab"]),
-            shift_requests.c.to_cab.is_(ch["to_cab"]),
+            *_same_trip(who, ch), shift_requests.c.from_cab.is_not_distinct_from(ch["from_cab"]),
+            shift_requests.c.to_cab.is_not_distinct_from(ch["to_cab"]),
             shift_requests.c.status == "pending_approval")).scalar()
         if found:
             return found

@@ -1,20 +1,38 @@
+# One command: docker compose up --build   ->  UI + API on http://localhost:8000
+# Data Flow: browser -> api:8000 -> Postgres "db" (app data, audit log)
+#                              -> /data/checkpoints.db on volume "agent_state" (paused chats)
+# Both live in named volumes, so a paused request survives `docker compose restart api`.
 services:
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: agent
-      POSTGRES_PASSWORD: agent
+      POSTGRES_PASSWORD: agent        # local demo only (see README: production key management)
       POSTGRES_DB: agent
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:                      # api waits until Postgres accepts connections
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent"]
       interval: 2s
       retries: 15
 
   api:
     build: .
-    env_file: .env
+    env_file:
+      - path: .env                    # optional: LLM key etc.; works without it (fake LLM)
+        required: false
+    environment:                      # these always win over .env inside Docker
+      DATABASE_URL: postgresql+psycopg://agent:agent@db:5432/agent
+      CHECKPOINT_DB: /data/checkpoints.db
     ports:
       - "8000:8000"
+    volumes:
+      - agent_state:/data
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  agent_state:

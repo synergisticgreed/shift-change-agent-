@@ -1,5 +1,5 @@
 """Shared fixtures: fresh DB, fake LLM, frozen clock, fresh agent per test."""
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +12,7 @@ from app.db import store
 from app.llm.fake import FakeLLM
 from app.main import app
 
-TODAY = date.today()
+TODAY = clock.real_today()  # same local date the app seeds with
 TOMORROW = (TODAY + timedelta(days=1)).isoformat()
 
 

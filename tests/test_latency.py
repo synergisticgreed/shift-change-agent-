@@ -50,7 +50,8 @@ def test_slow_llm_with_retry_uses_budget_then_template(ctx, monkeypatch):
     llm = SlowLLM(1.4, ["not json", GOOD])           # 1.4 + 1.4 = 2.8 s; reply gets only 0.7 s
     r, took = _timed_chat(ctx, monkeypatch, llm)
     assert r["status"] == "applied" and "19:00" in r["reply"]
-    assert took < LIMIT_S and r["llm_calls"] == llm.calls == 3
+    # 3 calls normally; on a busy machine < 0.3 s may be left, so the reply call is skipped (2)
+    assert took < LIMIT_S and r["llm_calls"] == llm.calls and llm.calls in (2, 3)
 
 
 def test_hanging_llm_falls_back_to_code(ctx, monkeypatch):

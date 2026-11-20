@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///agent.db"  # Postgres in Docker
     checkpoint_db: str = "checkpoints.db"     # LangGraph saved state
+    app_tz: str = "Asia/Kolkata"              # timezone of cab times + cut-offs (not the server's)
     jwt_secret: str = "change-me-to-a-32-byte-secret!!!"
     llm_provider: str = "fake"  # fake | groq
     llm_api_key: str = ""

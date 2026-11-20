@@ -19,6 +19,7 @@ audit_log       (id, company_id, actor, action, details, at)
 - A cab runs daily at `depart_at`; seats booked = roster rows for that cab + date.
 - `to_cab = NULL` means a cancel. `thread_id` is the chat to resume after approval.
 - Local dev uses SQLite; Docker uses Postgres (same SQLAlchemy tables).
+- All times are local to `APP_TZ` (default `Asia/Kolkata`): cab times, cut-offs and "today". The server/container clock (UTC in Docker) is converted in `app/clock.py`.
 
 **Request status:** `applied`, `rejected`, `pending_approval`, `approved`, `declined`, `failed`
 
@@ -193,3 +194,4 @@ Writes run in one transaction, so any failure rolls back and nothing is half-cha
 | 2026-11-20 | Step 5: per-thread run lock; decisions only on `pending_approval`; idempotent `wait_manager` + self-healing paused chat; `failed` outcome; manager note in audit; multi-process restart test |
 | 2026-11-20 | Step 6: `llm/budget.py` (call cap + per-message deadline); Groq wall-clock limit + `max_tokens`; lock waits capped; `busy` outcome / 409; `llm_calls` + `elapsed_ms` in `/chat`; `eval/latency.py` |
 | 2026-11-20 | Step 7: bare answers continue a request; time question lists free cabs; both-trips asks; `app/errors.py` (log + plain); paused = has interrupt (crash no longer wedges chat); plain 422; Postgres timeouts |
+| 2026-11-20 | Step 8: Docker (Postgres + checkpoint volume, optional .env, non-root, healthchecks); Postgres fix `IS` → `IS NOT DISTINCT FROM`; clock in `APP_TZ` (container is UTC) + `real_today()` for seed dates; `eval/run.py` (22 cases) → `eval/cases.jsonl` + `EVALUATION.md` |

@@ -3,12 +3,13 @@ Data Flow: settings.database_url -> engine -> tools/* open transactions on it.
            data/seed.json -> _seed -> tables (first start only)."""
 import json
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, insert, select
 from sqlalchemy.engine import Connection, Engine
 
+from app import clock
 from app.config import settings
 from app.db.schema import (audit_log, cabs, companies, employees, meta,
                            policies, roster)
@@ -88,7 +89,7 @@ def _seed(conn: Connection) -> None:
         conn.execute(insert(cabs).values(
             company_id=co, id=cid, route=route, trip_type=trip, depart_at=at, capacity=seats[co]))
     for co, eid, offset, trip, cab in data["roster"]:
-        day = (date.today() + timedelta(days=offset)).isoformat()
+        day = (clock.real_today() + timedelta(days=offset)).isoformat()  # local date, not server UTC
         conn.execute(insert(roster).values(
             company_id=co, employee_id=eid, date=day, trip_type=trip, cab_id=cab))
 

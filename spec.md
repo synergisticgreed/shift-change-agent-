@@ -54,7 +54,7 @@ A chat agent that handles a shift-change request end to end, safely, for many co
 - [x] The agent calls the right tool for each kind of request (test).
 - [x] A tool timeout gives a friendly message and changes nothing (test).
 - [x] An unclear request gets a question, not a guess (test).
-- [ ] `eval/cases.jsonl` runs and has fields `id, input, expected, actual, pass, notes`.
+- [x] `eval/cases.jsonl` runs and has fields `id, input, expected, actual, pass, notes`.
 
 ## 7. Bonus (chosen)
 

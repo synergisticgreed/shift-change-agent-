@@ -9,8 +9,8 @@ A chat agent that handles employee cab shift-change requests for multiple compan
 ## Quick start
 
 ```bash
-cp .env.example .env          # add a free LLM key (Groq/Gemini)
-docker compose up --build     # API on http://localhost:8000
+docker compose up --build     # UI + API on http://localhost:8000 (fake LLM, no key needed)
+# optional: cp .env.example .env and set LLM_PROVIDER=groq + LLM_API_KEY
 ```
 
 | Task | Command |
@@ -20,7 +20,9 @@ docker compose up --build     # API on http://localhost:8000
 | Fresh mock data (stop server first) | `python -m app.db.store reset` |
 | Latency benchmark (p50/p95) | `python -m eval.latency 60` |
 | Tests (fake LLM) | `docker compose run --rm api pytest -q` |
-| Evaluation set | `docker compose run --rm api python -m eval.run` |
+| Evaluation set (local) | `python -m eval.run` → `eval/cases.jsonl` + `EVALUATION.md` |
+| Evaluation set (Docker) | `docker compose run --rm -v ./eval:/code/eval api python -m eval.run` |
+| Stop / wipe demo data | `docker compose down` / `docker compose down -v` |
 | Demo token | `docker compose run --rm api python -m app.auth.issue --company acme --employee E101` |
 
 ---
@@ -31,7 +33,7 @@ docker compose up --build     # API on http://localhost:8000
 |---|---|---|
 | API | FastAPI | Typed, async, simple auth dependency |
 | Agent | LangGraph | Clear flow + `interrupt()` for manager approval |
-| Store | Postgres | Data, audit log and agent checkpoints in one place |
+| Store | Postgres + SQLite checkpoint file | App data and audit log in Postgres; paused chats in a checkpoint file on a Docker volume |
 | Auth | JWT | Carries `company_id` and `employee_id` |
 | LLM | Groq (free) | Swappable; tests use a fake |
 
@@ -71,7 +73,7 @@ JWT ─► /chat ─► Understand (LLM) ─► Decide (code) ─► Reply (LLM)
 - **Identity from the token only.** Tools never take company or employee IDs from the LLM.
 - **Rules in code.** Cut-off and capacity checks are plain Python and are re-checked before saving.
 - **LLM output is untrusted.** It's validated with Pydantic and retried once; if it's still invalid, the agent asks a question.
-- **Durable pause.** The LangGraph Postgres checkpointer keeps the paused conversation across restarts.
+- **Durable pause.** LangGraph's checkpointer saves every step to a file on a Docker volume, so the paused conversation survives restarts.
 - **Clear failures.** Timeouts, a full cab or a pending approval each get a plain next step. Full traces go to the server log only (`app/errors.py`), and the user never sees a stack trace.
 
 ---
@@ -95,7 +97,7 @@ The tests use a fake LLM, so they never depend on API quota. They cover:
 - tool failure
 - ambiguous requests
 
-Evaluation cases live in `eval/cases.jsonl` (`id, input, expected, actual, pass, notes`). Results are in [EVALUATION.md](EVALUATION.md).
+`python -m eval.run` runs 22 edge cases, each on a fresh DB, and writes `eval/cases.jsonl` (`id, input, expected, actual, pass, notes`) plus [EVALUATION.md](EVALUATION.md). A case passes only if its behaviour matches **and** every message stayed within 4 LLM calls and 5 s.
 
 ---
 
@@ -111,7 +113,7 @@ Evaluation cases live in `eval/cases.jsonl` (`id, input, expected, actual, pass,
 | Choice | Gain | Cost |
 |---|---|---|
 | Fixed graph, not a free agent loop | Predictable calls and latency | Less flexible |
-| Postgres only, no Redis | One dependency | No pub/sub |
+| Postgres + checkpoint file, no Redis | Few moving parts; tested checkpointer | Two stores (crash between them is handled: `wait_manager` is idempotent) |
 | LLM writes replies | Natural tone | One extra call |
 | Local HS256 JWT | Simple | Not production key management |
 
@@ -122,6 +124,6 @@ Evaluation cases live in `eval/cases.jsonl` (`id, input, expected, actual, pass,
 ```
 app/        api, auth, agent, tools, rules, db
 data/       seed data (2+ companies)
-eval/       evaluation cases + runner
+eval/       run.py (cases) + harness.py + latency.py; output cases.jsonl
 tests/      pytest suite
 ```

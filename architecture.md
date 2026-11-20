@@ -12,7 +12,8 @@
 | LLM client | Groq / Gemini | Understands messages, writes replies |
 | Tools | Python functions | Roster, cab options, requests |
 | Rule engine | Plain Python | Cut-off and seat checks |
-| Database | Postgres (SQLite locally) | Data, audit log, agent checkpoints |
+| Database | Postgres (SQLite locally) | Data, audit log |
+| Checkpoints | SQLite file (Docker volume) | Saved agent state for paused chats |
 
 ## 2. Big picture
 
@@ -33,7 +34,7 @@
    LLM client     Tools + Rule engine
                        │
                        ▼
-                   Postgres  (data + checkpoints)
+        Postgres (data)   checkpoints.db (agent state)
 ```
 
 ## 3. Chat flow
@@ -75,9 +76,10 @@ Safety on resume:
 ## 6. Deployment
 
 ```
-docker compose up
- ├── api   (FastAPI + LangGraph)
- └── db    (Postgres, seeded on start)
+docker compose up --build
+ ├── api   (FastAPI + LangGraph, UI on :8000)  ─ volume agent_state:/data (checkpoints.db)
+ └── db    (Postgres 16, healthchecked)       ─ volume pgdata
+api starts only after db is healthy, then creates + seeds tables (first start only).
 ```
 
 ## 7. Folder structure
@@ -95,6 +97,6 @@ app/
   rules/         # engine (small checks), validate (allow/deny)
   db/            # schema, seed
 data/            # seed.json
-eval/            # cases.jsonl, runner
+eval/            # run.py + harness.py -> cases.jsonl; latency.py
 tests/
 ```

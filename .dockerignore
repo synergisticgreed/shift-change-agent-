@@ -1,5 +1,8 @@
+# Keep the image small and free of local state/secrets
 .git
 .env
 .venv
 __pycache__
+.pytest_cache
+*.db
 *.docx

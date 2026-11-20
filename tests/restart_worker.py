@@ -5,7 +5,7 @@ Data Flow: fresh process -> env points at workdir DB files -> app starts (lifesp
 import json
 import os
 import sys
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
 phase, workdir = sys.argv[1], sys.argv[2]
 # Must be set BEFORE importing app: settings are read at import time
@@ -19,7 +19,8 @@ from app.auth.jwt import issue_token  # noqa: E402
 from app.main import app  # noqa: E402
 
 # Freeze time at 17:00 on the seeded trip day: 1h before the 18:00 drop -> inside cut-off
-clock.now = lambda: datetime.combine(date.today() + timedelta(days=1), time(17, 0))
+TRIP_DAY = clock.real_today() + timedelta(days=1)   # seeded trip day
+clock.now = lambda: datetime.combine(TRIP_DAY, time(17, 0))
 
 EMP = {"Authorization": "Bearer " + issue_token("acme", "E101")}
 MGR = {"Authorization": "Bearer " + issue_token("acme", "M1", "manager")}
